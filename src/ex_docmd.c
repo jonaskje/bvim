@@ -128,6 +128,7 @@ static int	getargopt(exarg_T *eap);
 #if !defined(FEAT_QUICKFIX) || !defined(FEAT_WINDOWS)
 # define ex_cclose		ex_ni
 # define ex_copen		ex_ni
+# define ex_ctoggle		ex_ni
 # define ex_cwindow		ex_ni
 #endif
 #if !defined(FEAT_QUICKFIX) || !defined(FEAT_EVAL)
