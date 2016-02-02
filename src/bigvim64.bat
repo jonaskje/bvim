@@ -1,7 +1,8 @@
-:: command to build big Vim 64 bit with OLE, Perl, Python, Ruby and Tcl
-:: First run: %VCDIR%\vcvarsall.bat x86_amd64
-:: Ruby and Tcl are excluded, doesn't seem to work.
-SET VCDIR="C:\Program Files (x86)\Microsoft Visual Studio 9.0\VC\"
-SET TOOLDIR=E:\
-%VCDIR%\bin\nmake -f Make_mvc.mak CPU=AMD64 GUI=yes OLE=yes PERL=E:\perl514 DYNAMIC_PERL=yes PERL_VER=514 PYTHON=%TOOLDIR%python27 DYNAMIC_PYTHON=yes PYTHON_VER=27 PYTHON3=%TOOLDIR%python32 DYNAMIC_PYTHON3=yes PYTHON3_VER=32  %1 IME=yes CSCOPE=yes
-
+:: command to build big Vim 64 bit with Python for Windows 7
+call "%VS120COMNTOOLS%..\..\VC\vcvarsall.bat" amd64
+set SDK_INCLUDE_DIR=%ProgramFiles(x86)%\Microsoft SDKs\Windows\v7.1A\Include
+set VIM_ADD_FEATURES=FEATURES=BIG GUI=yes PYTHON=C:\python27 DYNAMIC_PYTHON=yes PYTHON_VER=27
+set VIM_REMOVE_FEATURES=CSCOPE=no NETBEANS=no XPM=no
+set VIM_FEATURES=%VIM_ADD_FEATURES% %VIM_REMOVE_FEATURES%
+nmake -f Make_mvc.mak WINVER=0x0601 CPU=AMD64 %VIM_FEATURES%
+pause
