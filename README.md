@@ -5,9 +5,9 @@ bvim is a hacked version of gvim which adds a few features which helps working o
 
 The goal is to make all common programming actions take less than 500ms on a fast machine.
 
-Bvim is supported on Windows 7 and builds with VS2010.
+Bvim is supported on Windows 7 and builds with VS2013.
 
-Build bvim using src/vim_vs2010.sln
+Build bvim using src/vim_vs2013.sln with Python 2.7 installed at C:\Python27.
 
 boresln `<visual studio .sln file`>
 ------------------------------------------------------
