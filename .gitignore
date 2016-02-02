@@ -31,6 +31,7 @@ src/GvimExt
 src/Obj*
 src/Release
 src/vim_vs2013.log
+src/vim_vs2013.opensdf
 src/vim_vs2013.sdf
 src/vim_vs2013.suo
 src/vim_vs2013.vcxproj.user

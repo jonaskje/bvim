@@ -41,15 +41,19 @@
     <LinkIncremental>true</LinkIncremental>
     <TargetName>bvimd</TargetName>
     <OutDir>$(SolutionDir)</OutDir>
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);C:\Python27\include</IncludePath>
+    <LibraryPath>$(VC_LibraryPath_x86);$(WindowsSDK_LibraryPath_x86);C:\Python27\libs</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
     <TargetName>bvim</TargetName>
     <OutDir>$(SolutionDir)</OutDir>
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);C:\Python27\include</IncludePath>
+    <LibraryPath>$(VC_LibraryPath_x86);$(WindowsSDK_LibraryPath_x86);C:\Python27\libs</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
-      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;HAVE_PATHDEF;FEAT_BORE;WINVER=0x0601;_WIN32_WINNT=0x0601;DEBUG;FEAT_GUI_W32;DYNAMIC_ICONV;DYNAMIC_GETTEXT;FEAT_BIG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;HAVE_PATHDEF;FEAT_BORE;WINVER=0x0601;_WIN32_WINNT=0x0601;DEBUG;FEAT_GUI_W32;DYNAMIC_ICONV;DYNAMIC_GETTEXT;FEAT_BIG;FEAT_PYTHON;DYNAMIC_PYTHON;DYNAMIC_PYTHON_DLL="python27.dll";%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>.;proto;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <WarningLevel>Level3</WarningLevel>
@@ -68,7 +72,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
-      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;HAVE_PATHDEF;FEAT_BORE;WINVER=0x0601;_WIN32_WINNT=0x0601;FEAT_GUI_W32;DYNAMIC_ICONV;DYNAMIC_GETTEXT;FEAT_BIG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;HAVE_PATHDEF;FEAT_BORE;WINVER=0x0601;_WIN32_WINNT=0x0601;FEAT_GUI_W32;DYNAMIC_ICONV;DYNAMIC_GETTEXT;FEAT_BIG;FEAT_PYTHON;DYNAMIC_PYTHON;DYNAMIC_PYTHON_DLL="python27.dll";%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>.;proto;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <WarningLevel>Level3</WarningLevel>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
@@ -168,6 +172,9 @@
       <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</CompileAsManaged>
     </ClCompile>
     <ClCompile Include="json.c">
+      <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</CompileAsManaged>
+    </ClCompile>
+    <ClCompile Include="if_python.c">
       <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</CompileAsManaged>
     </ClCompile>
     <ClCompile Include="main.c">
