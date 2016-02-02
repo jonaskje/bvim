@@ -1806,6 +1806,10 @@ struct file_buffer
     void	*b_ruby_ref;
 #endif
 
+#ifdef FEAT_BORE
+    int		b_borebuf;
+#endif
+
 #if defined(FEAT_SYN_HL) || defined(FEAT_SPELL)
     synblock_T	b_s;		/* Info related to syntax highlighting.  w_s
 				 * normally points to this, but some windows

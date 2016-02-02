@@ -1,0 +1,476 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav</Extensions>
+    </Filter>
+    <Filter Include="bore">
+      <UniqueIdentifier>{a33bce04-c480-4017-8c70-861264ae2657}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="blowfish.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="buffer.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="charset.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="diff.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="digraph.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="edit.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="eval.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ex_cmds.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ex_cmds2.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ex_docmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ex_eval.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ex_getln.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="fileio.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="fold.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="getchar.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="gui.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="gui_beval.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="gui_w32.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="hardcopy.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="hashtab.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="main.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="mark.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="mbyte.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="memfile.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="memline.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="menu.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="message.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="misc1.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="misc2.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="move.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="normal.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ops.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="option.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="os_mswin.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="os_w32exe.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="os_win32.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="popupmnu.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="quickfix.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="regexp.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="screen.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="search.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="sha256.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="spell.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="syntax.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="tag.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="term.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ui.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="undo.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="window.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="version.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="if_bore.c">
+      <Filter>bore</Filter>
+    </ClCompile>
+    <ClCompile Include="roxml-internal.c">
+      <Filter>bore</Filter>
+    </ClCompile>
+    <ClCompile Include="roxml-parse-engine.c">
+      <Filter>bore</Filter>
+    </ClCompile>
+    <ClCompile Include="roxml.c">
+      <Filter>bore</Filter>
+    </ClCompile>
+    <ClCompile Include="if_bore_find.cpp">
+      <Filter>bore</Filter>
+    </ClCompile>
+    <ClCompile Include="crypt.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="crypt_zip.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="winclip.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="pathdef.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="json.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="vim.rc">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="proto\blowfish.pro" />
+    <None Include="proto\buffer.pro" />
+    <None Include="proto\charset.pro" />
+    <None Include="proto\diff.pro" />
+    <None Include="proto\digraph.pro" />
+    <None Include="proto\edit.pro" />
+    <None Include="proto\eval.pro" />
+    <None Include="proto\ex_cmds.pro" />
+    <None Include="proto\ex_cmds2.pro" />
+    <None Include="proto\ex_docmd.pro" />
+    <None Include="proto\ex_eval.pro" />
+    <None Include="proto\ex_getln.pro" />
+    <None Include="proto\fileio.pro" />
+    <None Include="proto\fold.pro" />
+    <None Include="proto\getchar.pro" />
+    <None Include="proto\gui.pro" />
+    <None Include="proto\gui_athena.pro" />
+    <None Include="proto\gui_beval.pro" />
+    <None Include="proto\gui_gtk.pro" />
+    <None Include="proto\gui_gtk_x11.pro" />
+    <None Include="proto\gui_mac.pro" />
+    <None Include="proto\gui_motif.pro" />
+    <None Include="proto\gui_photon.pro" />
+    <None Include="proto\gui_riscos.pro" />
+    <None Include="proto\gui_w16.pro" />
+    <None Include="proto\gui_w32.pro" />
+    <None Include="proto\gui_x11.pro" />
+    <None Include="proto\gui_xmdlg.pro" />
+    <None Include="proto\hangulin.pro" />
+    <None Include="proto\hardcopy.pro" />
+    <None Include="proto\hashtab.pro" />
+    <None Include="proto\if_bore.pro" />
+    <None Include="proto\if_cscope.pro" />
+    <None Include="proto\if_lua.pro" />
+    <None Include="proto\if_mzsch.pro" />
+    <None Include="proto\if_ole.pro" />
+    <None Include="proto\if_perl.pro" />
+    <None Include="proto\if_perlsfio.pro" />
+    <None Include="proto\if_python.pro" />
+    <None Include="proto\if_python3.pro" />
+    <None Include="proto\if_ruby.pro" />
+    <None Include="proto\if_tcl.pro" />
+    <None Include="proto\if_xcmdsrv.pro" />
+    <None Include="proto\main.pro" />
+    <None Include="proto\mark.pro" />
+    <None Include="proto\mbyte.pro" />
+    <None Include="proto\memfile.pro" />
+    <None Include="proto\memline.pro" />
+    <None Include="proto\menu.pro" />
+    <None Include="proto\message.pro" />
+    <None Include="proto\misc1.pro" />
+    <None Include="proto\misc2.pro" />
+    <None Include="proto\move.pro" />
+    <None Include="proto\netbeans.pro" />
+    <None Include="proto\normal.pro" />
+    <None Include="proto\ops.pro" />
+    <None Include="proto\option.pro" />
+    <None Include="proto\os_amiga.pro" />
+    <None Include="proto\os_mac_conv.pro" />
+    <None Include="proto\os_msdos.pro" />
+    <None Include="proto\os_mswin.pro" />
+    <None Include="proto\os_qnx.pro" />
+    <None Include="proto\os_riscos.pro" />
+    <None Include="proto\os_unix.pro" />
+    <None Include="proto\os_win16.pro" />
+    <None Include="proto\os_win32.pro" />
+    <None Include="proto\os_vms.pro" />
+    <None Include="proto\popupmnu.pro" />
+    <None Include="proto\pty.pro" />
+    <None Include="proto\quickfix.pro" />
+    <None Include="proto\regexp.pro" />
+    <None Include="proto\screen.pro" />
+    <None Include="proto\search.pro" />
+    <None Include="proto\sha256.pro" />
+    <None Include="proto\spell.pro" />
+    <None Include="proto\syntax.pro" />
+    <None Include="proto\tag.pro" />
+    <None Include="proto\term.pro" />
+    <None Include="proto\termlib.pro" />
+    <None Include="proto\ui.pro" />
+    <None Include="proto\undo.pro" />
+    <None Include="proto\version.pro" />
+    <None Include="proto\window.pro" />
+    <None Include="proto\workshop.pro" />
+    <None Include="proto\json.pro" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="arabic.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ascii.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="dosinst.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ex_cmds.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="farsi.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="feature.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="glbl_ime.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="globals.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="gui.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="gui_at_sb.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="gui_beval.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="gui_gtk_f.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="gui_gtk_vms.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="gui_w32_rc.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="gui_x11_pm.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="gui_xmebw.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="gui_xmebwp.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="guiw16rc.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="if_cscope.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="if_mzsch.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="if_ole.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="if_py_both.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="if_sniff.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="integration.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="keymap.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="macros.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="nbdebug.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="option.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="os_amiga.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="os_beos.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="os_dos.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="os_mac.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="os_mint.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="os_msdos.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="os_os2_cfg.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="os_qnx.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="os_unix.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="os_unixx.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="os_win16.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="os_win32.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="os_vms_conf.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="proto.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="regexp.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="roxml.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="roxml_win32_native.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="roxml-defines.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="roxml-doxy.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="roxml-internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="roxml-parse-engine.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="roxml-types.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="structs.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="term.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="version.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="vim.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="vimio.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="vimtbar.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="workshop.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="wsdebug.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="xpm_w32.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="if_bore.h">
+      <Filter>bore</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

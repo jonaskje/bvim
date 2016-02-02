@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 2013
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "vim_vs2013", "vim_vs2013.vcxproj", "{4A07341F-829B-7311-ABD0-68B31D7CB23A}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{845E0EF8-AB4F-495F-9739-D9D7F709A477}"
+	ProjectSection(SolutionItems) = preProject
+		Performance2.psess = Performance2.psess
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Release|Win32 = Release|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{4A07341F-829B-7311-ABD0-68B31D7CB23A}.Debug|Win32.ActiveCfg = Debug|Win32
+		{4A07341F-829B-7311-ABD0-68B31D7CB23A}.Debug|Win32.Build.0 = Debug|Win32
+		{4A07341F-829B-7311-ABD0-68B31D7CB23A}.Release|Win32.ActiveCfg = Release|Win32
+		{4A07341F-829B-7311-ABD0-68B31D7CB23A}.Release|Win32.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

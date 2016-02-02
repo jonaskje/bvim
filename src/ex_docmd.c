@@ -246,6 +246,15 @@ static void	ex_popup(exarg_T *eap);
 # define do_scscope		ex_ni
 # define do_cstag		ex_ni
 #endif
+#ifndef FEAT_BORE
+# define ex_borebuild		ex_ni
+# define ex_borefind		ex_ni
+# define ex_boreopen		ex_ni
+# define ex_boreproj		ex_ni
+# define ex_boresln		ex_ni
+# define ex_boretoggle		ex_ni
+# define ex_Boreopenselection	ex_ni
+#endif
 #ifndef FEAT_SYN_HL
 # define ex_syntax		ex_ni
 # define ex_ownsyntax		ex_ni
