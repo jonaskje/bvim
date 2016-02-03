@@ -2242,6 +2242,48 @@ qf_types(int c, int nr)
 
 #if defined(FEAT_WINDOWS) || defined(PROTO)
 /*
+ * ":ctoggle": toggle the quickfix window,
+ *             execute ":copen" if it is currently closed,
+ *             close it if it is already open
+ * ":ltoggle": toggle the location list window,
+ *             execute ":lopen" if it is currently closed,
+ *             close it if it is already open
+ */
+    void
+ex_ctoggle(exarg_T *eap)
+{
+    qf_info_T	*qi = &ql_info;
+    win_T	*win;
+
+    if (eap->cmdidx == CMD_ltoggle)
+    {
+	qi = GET_LOC_LIST(curwin);
+	if (qi == NULL)
+	    return;
+    }
+
+    /* Look for an existing quickfix window.  */
+    win = qf_find_win(qi);
+
+    /*
+     * If a quickfix window is open, close it.
+     * If a quickfix window is not open, try to open it.
+     */
+    if (win != NULL)
+    {
+	win_close(win, FALSE);
+    }
+    else
+    {
+	if (eap->cmdidx == CMD_ltoggle)
+	    eap->cmdidx = CMD_lopen;
+	else /* if (eap->cmdidx == CMD_ctoggle) */
+	    eap->cmdidx = CMD_copen;
+	ex_copen(eap);
+    }
+}
+
+/*
  * ":cwindow": open the quickfix window if we have errors to display,
  *	       close it if not.
  * ":lwindow": open the location list window if we have locations to display,

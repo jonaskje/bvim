@@ -128,6 +128,7 @@ static int	getargopt(exarg_T *eap);
 #if !defined(FEAT_QUICKFIX) || !defined(FEAT_WINDOWS)
 # define ex_cclose		ex_ni
 # define ex_copen		ex_ni
+# define ex_ctoggle		ex_ni
 # define ex_cwindow		ex_ni
 #endif
 #if !defined(FEAT_QUICKFIX) || !defined(FEAT_EVAL)
@@ -244,6 +245,15 @@ static void	ex_popup(exarg_T *eap);
 # define do_cscope		ex_ni
 # define do_scscope		ex_ni
 # define do_cstag		ex_ni
+#endif
+#ifndef FEAT_BORE
+# define ex_borebuild		ex_ni
+# define ex_borefind		ex_ni
+# define ex_boreopen		ex_ni
+# define ex_boreproj		ex_ni
+# define ex_boresln		ex_ni
+# define ex_boretoggle		ex_ni
+# define ex_Boreopenselection	ex_ni
 #endif
 #ifndef FEAT_SYN_HL
 # define ex_syntax		ex_ni

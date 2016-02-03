@@ -1,0 +1,373 @@
+/* vi:set ts=8 sts=4 sw=4 et: */
+
+#ifdef FEAT_BORE
+
+extern "C" {
+#include "if_bore.h"
+}
+#include <windows.h>
+#include <winnt.h>
+
+//#define BORE_CVPROFILE
+
+#ifdef BORE_CVPROFILE
+#pragma comment(lib, "Advapi32.lib")
+#include <cvmarkers.h>
+//#include <C:\vs2013\Common7\IDE\Extensions\iq325bsi.llt\SDK\Native\Inc\cvmarkers.h>
+PCV_PROVIDER g_provider;
+PCV_MARKERSERIES g_series1;
+int g_cv_initialized;
+
+#define BORE_CVBEGINSPAN(str) CvEnterSpanA(g_series1, &span, str)
+#define BORE_CVENDSPAN() do { CvLeaveSpan(span); span = 0; } while(0)
+#define BORE_CVINITSPAN PCV_SPAN span = 0
+#define BORE_CVDEINITSPAN do { if (span) CvLeaveSpan(span); } while(0)
+#else
+#define BORE_CVBEGINSPAN(str)
+#define BORE_CVENDSPAN()
+#define BORE_CVINITSPAN
+#define BORE_CVDEINITSPAN
+#endif
+
+#define BTSOUTPUT(j) if (p != out_end) *p++ = j; else goto done;
+struct exact_string_search_t
+{
+    virtual int search(const char* text, int text_len, const char* what, int what_len, int* out, const int* out_end) const = 0;
+};
+
+struct quick_search_t : public exact_string_search_t
+{
+    quick_search_t(const char *what, int what_len)
+    {
+        /* Preprocessing */
+        pre_qs_bc((const unsigned char*)what, what_len, m_qs_bc);
+    }
+
+    virtual int search (const char* text, int text_len, const char* what, int what_len, int* out, const int* out_end) const
+    {
+        int j;
+        const unsigned char* x = (const unsigned char*)what;
+        int m = what_len;
+        const unsigned char* y = (const unsigned char*)text;
+        int n = text_len;
+        int* p = out;
+
+        j = 0;
+        while (j <= n - m) {
+            if (memcmp(x, y + j, m) == 0)
+                BTSOUTPUT(j);
+            j += m_qs_bc[y[j + m]];               /* shift */
+        }
+
+done:
+        return p - out;
+    }
+
+private:
+    enum { ASIZE = 256 };
+    int m_qs_bc[ASIZE];
+    void pre_qs_bc(const unsigned char *x, int m, int qs_bc[]) {
+        int i;
+
+        for (i = 0; i < ASIZE; ++i)
+            qs_bc[i] = m + 1;
+        for (i = 0; i < m; ++i)
+            qs_bc[x[i]] = m - i;
+    }
+};
+
+struct old_search_t : public exact_string_search_t
+{
+    virtual int search(const char* text, int text_len, const char* what, int what_len, int* out, const int* out_end) const
+    {
+        // http://www-igm.univ-mlv.fr/~lecroq/string/index.html
+        const char* y = text;
+        int n = text_len;
+        const char* x = what;
+        int m = what_len;
+        int* p = out;
+        int j, k, ell;
+
+        /* Preprocessing */
+        if (x[0] == x[1]) {
+            k = 2;
+            ell = 1;
+        }
+        else {
+            k = 1;
+            ell = 2;
+        }
+
+        /* Searching */
+        j = 0;
+        while (j <= n - m) {
+            if (x[1] != y[j + 1])
+                j += k;
+            else {
+                if (memcmp(x + 2, y + j + 2, m - 2) == 0 && x[0] == y[j]) {
+                    BTSOUTPUT(j);
+                }
+                j += ell;
+            }
+        }
+done:
+        return p - out;
+    }
+};
+
+#undef BTSOUTPUT
+
+static void bore_resolve_match_location(int file_index, const char* p, u32 filesize, 
+        bore_match_t* match, bore_match_t* match_end, int* offset, int offset_count)
+{
+    const int* offset_end = offset + offset_count;
+    const char* pbegin = p;
+    const char* linebegin = p;
+    const char* fileend = p + filesize;
+    int line = 1;
+
+    while(offset < offset_end && match < match_end) {
+        const char* pend = pbegin + *offset;
+        while (p < pend) {
+            if (*p++ == '\n') {
+                ++line;
+                linebegin = p;
+            }
+        }
+        const char* lineend = pend;
+        while (lineend < fileend && *lineend != '\r' && *lineend != '\n')
+            ++lineend;
+        size_t linelen = lineend - linebegin;
+        if (linelen > sizeof(match->line) - 1)
+            linelen = sizeof(match->line) - 1;
+        match->file_index = file_index;
+        match->row = line;
+        match->column = p - linebegin;
+        memcpy(match->line, linebegin, linelen);
+        match->line[linelen] = 0;
+        ++match;
+        ++offset;
+    }
+}
+
+struct search_context_t 
+{
+    bore_t* b;
+    LONG* remaining_file_count;
+    bore_alloc_t filedata;
+    const exact_string_search_t* string_search;
+    bore_search_t* search;
+    bore_match_t* match;
+    LONG match_size;
+    LONG* match_count;
+    int was_truncated;
+};
+
+static void search_one_file(struct search_context_t* search_context, const char* filename, int file_index)
+{
+    HANDLE file_handle = INVALID_HANDLE_VALUE;
+    bore_search_result_t search_result = {0};
+    BORE_CVINITSPAN;
+
+    {
+        BORE_CVBEGINSPAN("opn");
+        WCHAR fn[BORE_MAX_PATH];
+        int result = MultiByteToWideChar(CP_UTF8, 0, filename, -1, fn, BORE_MAX_PATH);
+        if (result == 0)
+        {
+            goto skip;
+        }
+
+        file_handle = CreateFileW(fn, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, 0);
+        if (file_handle == INVALID_HANDLE_VALUE)
+        {
+            goto skip;
+        }
+        BORE_CVENDSPAN();
+    }
+
+    {
+        BORE_CVBEGINSPAN("rd");
+
+        DWORD filesize = GetFileSize(file_handle, 0);
+        if (filesize == INVALID_FILE_SIZE)
+            goto skip;
+
+        search_context->filedata.cursor = search_context->filedata.base;
+        bore_alloc(&search_context->filedata, filesize);
+
+        char* p = (char*)search_context->filedata.base;
+        DWORD remaining = filesize;
+        while(remaining) {
+            DWORD readbytes;
+            if(!ReadFile(file_handle, p + filesize - remaining, remaining, &readbytes, 0))
+                goto skip;
+            remaining -= readbytes;
+        }
+
+        BORE_CVENDSPAN();
+    }
+
+
+    {
+        BORE_CVBEGINSPAN("srch");
+
+        // Search for the text
+        int match_offset[BORE_MAXMATCHPERFILE];
+        int match_in_file = search_context->string_search->search(
+                (char*)search_context->filedata.base, 
+                search_context->filedata.cursor - search_context->filedata.base,
+                search_context->search->what, 
+                search_context->search->what_len, 
+                &match_offset[0], 
+                &match_offset[BORE_MAXMATCHPERFILE]);
+
+        // Fill the result with the line's text, etc.
+        bore_resolve_match_location(
+                file_index, 
+                (char*)search_context->filedata.base, 
+                search_context->filedata.cursor - search_context->filedata.base, 
+                &search_result.result[0], 
+                &search_result.result[BORE_MAXMATCHPERFILE], 
+                match_offset, 
+                match_in_file);
+
+        if (match_in_file == BORE_MAXMATCHPERFILE)
+            search_context->was_truncated = 1;
+
+        search_result.hits = match_in_file;
+
+        BORE_CVENDSPAN();
+    }
+
+    {
+        BORE_CVBEGINSPAN("wr");
+
+        LONG start_index = InterlockedExchangeAdd(search_context->match_count, search_result.hits);
+
+        int n = search_result.hits;
+        if (start_index + n >= search_context->match_size)
+        {
+            search_context->was_truncated = 2; // Out of space. Signal quit.
+            n = search_context->match_size - start_index;
+        }
+
+        if (n > 0)
+            memcpy(&search_context->match[start_index], search_result.result, sizeof(bore_match_t) * n);
+
+        BORE_CVENDSPAN();
+    }
+
+skip:
+    if (file_handle != INVALID_HANDLE_VALUE) 
+    {
+        CloseHandle(file_handle);
+    }
+    BORE_CVDEINITSPAN;
+}
+
+static DWORD WINAPI search_worker(struct search_context_t* search_context)
+{
+    for (;;)
+    {
+        LONG file_index = InterlockedDecrement(search_context->remaining_file_count);
+        if (file_index < 0)
+            break;
+
+        // skip files based on file extension filter
+        if (search_context->search->ext_count > 0)
+        {
+            u32 file_ext = *((u32*)search_context->b->file_ext_alloc.base + file_index);
+            int i;
+            for (i = 0; i < search_context->search->ext_count; ++i)
+            {
+                if (file_ext == search_context->search->ext[i])
+                    break;
+            }
+
+            if (i == search_context->search->ext_count)
+                continue;
+        }
+
+        bore_file_t* const files = (bore_file_t*)search_context->b->file_alloc.base;
+
+        if (strstr(bore_str(search_context->b, files[file_index].file), "\\__Generated"))
+            continue;
+
+        search_one_file(search_context, bore_str(search_context->b, files[file_index].file), file_index);
+
+        if (search_context->was_truncated > 1)
+            break;
+
+    }
+    return 0;
+}
+
+int bore_dofind(bore_t* b, int thread_count, int* truncated_, bore_match_t* match, int match_size, bore_search_t* search)
+{
+#ifdef BORE_CVPROFILE
+    if (!g_cv_initialized)
+    {
+        GUID guid = { 0x551695cb, 0x80ac, 0x4c14, 0x98, 0x58, 0xec, 0xb9, 0x43, 0x48, 0xd4, 0x3e };
+        CvInitProvider(&guid, &g_provider);
+        CvCreateMarkerSeriesA(g_provider, "bore_find", &g_series1);
+        g_cv_initialized = 1;
+    }
+#endif  
+
+    LONG file_count = b->file_count;
+    *truncated_ = 0;    
+
+    quick_search_t string_search(search->what, search->what_len);
+
+    if (thread_count < 1)
+    {
+        thread_count = 1;
+    }
+    else if (thread_count > 32) 
+    {
+        thread_count = 32;
+    }
+
+    HANDLE threads[32] = {0};
+    search_context_t search_contexts[32] = {0};
+    LONG match_count = 0;
+    for (int i = 0; i < thread_count; ++i) 
+    {
+        search_contexts[i].b = b;
+        search_contexts[i].remaining_file_count = &file_count;
+        bore_prealloc(&search_contexts[i].filedata, 100000);
+        search_contexts[i].string_search = &string_search;
+        search_contexts[i].search = search;
+        search_contexts[i].match = match;
+        search_contexts[i].match_size = match_size;
+        search_contexts[i].match_count = &match_count;
+    }
+
+    for (int i = 0; i < thread_count - 1; ++i)
+        threads[i] = CreateThread(0, 0, (LPTHREAD_START_ROUTINE)search_worker, &search_contexts[i], 0, 0);
+
+    search_worker(&search_contexts[thread_count - 1]);
+
+    WaitForMultipleObjects(thread_count - 1, threads, TRUE, INFINITE);
+
+    for (int i = 0; i < thread_count; ++i)
+    {
+        if (search_contexts[i].was_truncated > *truncated_)
+            *truncated_ = search_contexts[i].was_truncated;
+    }
+
+    if (*truncated_ > 1)
+        match_count = match_size;
+
+    for (int i = 0; i < thread_count; ++i) 
+    {
+        bore_alloc_free(&search_contexts[i].filedata);
+    }
+
+    return match_count;
+}
+
+
+#endif
+

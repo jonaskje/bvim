@@ -20,24 +20,23 @@ src/auto/link.log
 src/auto/link.sed
 src/auto/pathdef.c
 
-# Windows
-*.exe
-*.idb
-*.manifest
-*.exp
-*.obj
-*.pdb
-*.ilk
-*.sln
-*.suo
-*.res
-*.RES
-src/if_perl.c
-src/pathdef.c
-src/Obj*/pathdef.c
-gvimext.dll
-gvimext.lib
-runtime/doc/uganda.nsis.txt
+# Windows - bvim
+src/*.exe
+src/*.ilk
+src/*.metagen
+src/*.obj
+src/*.pdb
+src/Debug
+src/GvimExt
+src/Obj*
+src/Release
+src/vim_vs2013.log
+src/vim_vs2013.opensdf
+src/vim_vs2013.sdf
+src/vim_vs2013.suo
+src/vim_vs2013.vcxproj.user
+src/xxd
+*.swp
 
 # Borland C++
 bcc.cfg

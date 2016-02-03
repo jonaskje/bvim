@@ -1,5 +1,8 @@
-:: command to build big Vim with OLE, Perl, Python, Ruby and Tcl
-SET VCDIR="C:\Program Files (x86)\Microsoft Visual Studio 9.0\VC\bin\"
-SET TOOLDIR=E:\
-%VCDIR%nmake -f Make_mvc.mak GUI=yes OLE=yes PERL=%TOOLDIR%perl522\perl DYNAMIC_PERL=yes PERL_VER=522 PYTHON=%TOOLDIR%python27 DYNAMIC_PYTHON=yes PYTHON_VER=27 PYTHON3=%TOOLDIR%python34 DYNAMIC_PYTHON3=yes PYTHON3_VER=34 RUBY=%TOOLDIR%ruby192 DYNAMIC_RUBY=yes RUBY_VER=19 RUBY_VER_LONG=1.9.2 TCL=%TOOLDIR%tcl TCL_VER=86 TCL_VER_LONG=8.6 DYNAMIC_TCL=yes %1 IME=yes CSCOPE=yes
-
+:: command to build big Vim with Python for Windows 7
+call "%VS120COMNTOOLS%vsvars32.bat"
+set SDK_INCLUDE_DIR=%ProgramFiles(x86)%\Microsoft SDKs\Windows\v7.1A\Include
+set VIM_ADD_FEATURES=FEATURES=BIG GUI=yes PYTHON=C:\python27 DYNAMIC_PYTHON=yes PYTHON_VER=27
+set VIM_REMOVE_FEATURES=CSCOPE=no NETBEANS=no XPM=no
+set VIM_FEATURES=%VIM_ADD_FEATURES% %VIM_REMOVE_FEATURES%
+nmake -f Make_mvc.mak WINVER=0x0601 %VIM_FEATURES%
+pause
