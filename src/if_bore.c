@@ -351,6 +351,85 @@ done:
     return result;
 }
 
+static int bore_extract_projects_and_files_from_dir(bore_t* b, const char* sln_path)
+{
+    // C:\WINDOWS\system32\cmd.exe /c (echo hej ^>C:\Users\Chronos\AppData\Local\Temp\VIo49B9.tmp 2^>^&1)
+
+    BOOL is_git_repo;
+    {
+        ++emsg_silent;
+        char *cmd = "git rev-parse --is-inside-work-tree";
+        char* res = get_cmd_output(cmd, NULL, SHELL_READ & SHELL_SILENT, NULL);
+        is_git_repo = res && !STRCMP(res, "true");
+        --emsg_silent;
+    }
+
+    char* list_cmd = "dir /s /b /a-d";
+    if (is_git_repo)
+        list_cmd = "git ls-files";
+    else if (mch_can_exe("es", NULL, TRUE))
+        list_cmd = "es -s !folder: %cd%\\";
+
+    int len;
+    char* files = get_cmd_output(list_cmd, 0, SHELL_READ & SHELL_SILENT, &len);
+    if (files)
+    {
+        {
+            bore_proj_t* proj = (bore_proj_t*)bore_alloc(&b->proj_alloc, sizeof(bore_proj_t));
+            ++b->proj_count;
+            proj->project_sln_name = bore_strndup(b, ".\\", 2);
+            proj->project_sln_guid = 0;
+            proj->project_sln_path = proj->project_sln_name;
+            proj->project_file_path = b->sln_path;
+        }
+
+        int i;
+        int skipFile = 0;
+        int sln_dir_len = strlen(sln_path);
+        char *cur_dir = "";
+        char *start, *end;
+        for (i = 0; i < len; ++i)
+        {
+            start = files + i;
+            while (i < len && files[i] != '\r' && files[i] != '\n')
+                ++i;
+            end = files + i;
+            *end = 0;
+            if (end[1] == '\n')
+                ++i;
+
+            DWORD attr = 0;
+            char buf[BORE_MAX_PATH];
+            skipFile = bore_is_excluded_file(start);
+            if (!skipFile && FAIL != bore_canonicalize(start, buf, &attr)) {
+                if (!(FILE_ATTRIBUTE_DIRECTORY & attr)) {
+
+                    // check for new project, i.e. a change in first sublevel directory
+                    char* dir_start = buf + sln_dir_len; 
+                    char* dir_end = strchr(dir_start, '\\');
+                    if (dir_end && STRNCMP(cur_dir, dir_start, dir_end + 1 - dir_start))
+                    {
+                        bore_proj_t* proj = (bore_proj_t*)bore_alloc(&b->proj_alloc, sizeof(bore_proj_t));
+                        ++b->proj_count;
+                        proj->project_sln_name = bore_strndup(b, dir_start, dir_end + 1 - dir_start);
+                        proj->project_sln_guid = 0;
+                        proj->project_sln_path = proj->project_sln_name;
+                        proj->project_file_path = bore_strndup(b, buf, dir_end + 1 - buf);
+
+                        cur_dir = bore_str(b, proj->project_sln_name);
+                    }
+
+                    bore_file_t* files = (bore_file_t*)bore_alloc(&b->file_alloc, sizeof(bore_file_t));
+                    files->file = bore_strndup(b, buf, strlen(buf));
+                    files->proj_index = b->proj_count - 1;
+                    ++b->file_count;
+                }
+            }
+        }
+    }
+    return OK;
+}
+
 static int bore_extract_files_from_projects(bore_t* b)
 {
     bore_proj_t* proj = (bore_proj_t*)b->proj_alloc.base;
@@ -549,6 +628,59 @@ static void bore_load_ini(bore_ini_t* ini, const char* dirpath)
     ini->borebuf_height = 30;
 }
 
+static int bore_extract_sln_from_path(bore_t* b, const char* path)
+{
+    char buf[BORE_MAX_PATH];
+    DWORD path_attr = 0;
+    if (FAIL == bore_canonicalize((char*)path, buf, &path_attr))
+        return FAIL;
+
+    int path_len = strlen(buf);
+    b->sln_dir = bore_strndup(b, buf, path_len + 1); // trailing backslash
+
+    if (path_attr & FILE_ATTRIBUTE_DIRECTORY)
+    {
+        char* sln_dir_str = bore_str(b, b->sln_dir);
+        char* pc = vim_strrchr(sln_dir_str, '.');
+        // Special case. If the solution path is .git folder, then assume
+        // code paths start one level up from that
+        if (pc && 0 == STRNCMP(pc, ".git", 4) && (pc[4] == '\\' || pc[4] == 0))
+            pc[0] = 0; // Keep trailing backslash
+        else
+        {
+            char* pe = sln_dir_str + path_len - 1;
+            if (pe[0] != '\\')
+            {
+                pe[1] = '\\'; // Add trailing backslash
+                pe[2] = 0;
+            }
+        }
+        b->sln_path = b->sln_dir;
+    }
+    else
+    {
+        char* sln_dir_str = bore_str(b, b->sln_dir);
+        char* pc = vim_strrchr(sln_dir_str, '\\');
+        if (pc) {
+            pc[1] = 0; // Keep trailing backslash
+
+            // Special case. If the solution file is in a local folder, then assume 
+            // code paths start one level up from that
+            while (--pc > sln_dir_str) {
+                if (*pc == '\\') {
+                    if (STRICMP(pc, "\\Local\\") == 0) {
+                        pc[1] = 0; // Keep trailing backslash
+                    }
+                    break;
+                }
+            }
+        }
+        b->sln_path = bore_strndup(b, buf, path_len);
+    }
+
+    return OK;
+}
+
 struct bore_async_execute_context_t
 {
     HANDLE wait_thread;
@@ -582,30 +714,8 @@ static void bore_load_sln(const char* path)
     // Allocate something small, so that we can use offset 0 as NULL
     bore_alloc(&b->data_alloc, 1);
 
-    if (FAIL == bore_canonicalize((char*)path, buf, 0))
+    if (FAIL == bore_extract_sln_from_path(b, path))
         goto fail;
-
-    b->sln_path = bore_strndup(b, buf, strlen(buf));
-    b->sln_dir = bore_strndup(b, buf, strlen(buf));
-
-    {
-        char* sln_dir_str = bore_str(b, b->sln_dir);
-        char* pc = vim_strrchr(sln_dir_str, '\\');
-        if (pc) {
-            pc[1] = 0; // Keep trailing backslash
-
-            // Special case. If the solution file is in a local folder, then assume 
-            // code paths start one level up from that
-            while (--pc > sln_dir_str) {
-                if (*pc == '\\') {
-                    if (STRICMP(pc, "\\Local\\") == 0) {
-                        pc[1] = 0; // Keep trailing backslash
-                    }
-                    break;
-                }
-            }
-        }
-    }
 
     sprintf(buf, "cd %s", bore_str(b, b->sln_dir));
     ++msg_silent;
@@ -616,15 +726,25 @@ static void bore_load_sln(const char* path)
 
     BORE_VIMPROFILE_INIT;
 
-    BORE_VIMPROFILE_START;
-    if (FAIL == bore_extract_projects_and_files_from_sln(b, bore_str(b, b->sln_path)))
-        goto fail;
-    BORE_VIMPROFILE_STOP("bore_extract_projects_and_files_from_sln");
+    if (b->sln_dir != b->sln_path)
+    {
+        BORE_VIMPROFILE_START;
+        if (FAIL == bore_extract_projects_and_files_from_sln(b, bore_str(b, b->sln_path)))
+            goto fail;
+        BORE_VIMPROFILE_STOP("bore_extract_projects_and_files_from_sln");
 
-    BORE_VIMPROFILE_START;
-    if (FAIL == bore_extract_files_from_projects(b))
-        goto fail;
-    BORE_VIMPROFILE_STOP("bore_extract_files_from_projects");
+        BORE_VIMPROFILE_START;
+        if (FAIL == bore_extract_files_from_projects(b))
+            goto fail;
+        BORE_VIMPROFILE_STOP("bore_extract_files_from_projects");
+    }
+    else
+    {
+        BORE_VIMPROFILE_START;
+        if (FAIL == bore_extract_projects_and_files_from_dir(b, bore_str(b, b->sln_path)))
+            goto fail;
+        BORE_VIMPROFILE_STOP("bore_extract_projects_and_files_from_dir");
+    }
 
     BORE_VIMPROFILE_START;
     if (FAIL == bore_sort_and_cleanup_files(b))
@@ -664,7 +784,7 @@ static void bore_load_sln(const char* path)
 
 fail:
     bore_free(b);
-    EMSG2(_("Could not open solution file %s"), buf);
+    EMSG2(_("Could not open solution %s"), path);
     return;
 }
 
@@ -674,12 +794,12 @@ static void bore_print_sln(DWORD elapsed)
         char status[BORE_MAX_PATH];
         if (elapsed)
         {
-            sprintf(status, "%s, %d projects, %d files (%u ms)", bore_str(g_bore, g_bore->sln_path),
+            sprintf(status, "%s; %d projects; %d files; %u ms", bore_str(g_bore, g_bore->sln_path),
                     g_bore->proj_count, g_bore->file_count, elapsed);
         }
         else
         {
-            sprintf(status, "%s, %d projects, %d files", bore_str(g_bore, g_bore->sln_path),
+            sprintf(status, "%s; %d projects; %d files", bore_str(g_bore, g_bore->sln_path),
                     g_bore->proj_count, g_bore->file_count);
         }           
         MSG(_(status));
@@ -729,7 +849,7 @@ static void bore_display_search_result(bore_t* b, const char* filename, char* wh
 {
     exarg_T eap;
     char* title = (char*)alloc(100);
-    vim_snprintf(title, 100, "borefind \"%s\", %d lines%s", what, found > 0 ? found : -found, found < 0 ? " (truncated)" : "");
+    vim_snprintf(title, 100, "borefind \"%s\"; %d%s matching lines", what, found > 0 ? found : -found, found < 0 ? " (truncated)" : "");
 
     memset(&eap, 0, sizeof(eap));
     eap.cmdidx = CMD_cgetfile;
@@ -1299,12 +1419,12 @@ void ex_borefind(exarg_T *eap)
         elapsed = GetTickCount() - start;
         if (found)
         {
-            vim_snprintf(mess, 100, "Matching lines: %d%s Elapsed time: %u ms", found > 0 ? found : -found, found < 0 ? " (truncated)" : "", elapsed);
+            vim_snprintf(mess, 100, "%d%s matching lines for \"%s\"; %u ms", found > 0 ? found : -found, found < 0 ? " (truncated)" : "", what, elapsed);
             MSG(_(mess));
         }
         else
         {
-            vim_snprintf(mess, 100, "No matching lines for \"%s\": Elapsed time: %u ms", what, elapsed);
+            vim_snprintf(mess, 100, "No matching lines for \"%s\"; %u ms", what, elapsed);
             EMSG(_(mess));
         }
     }
@@ -1401,7 +1521,7 @@ void ex_boreproj(exarg_T *eap)
 
             sprintf(buf, "let g:bore_proj_path=\'%s\'", fn);
             do_cmdline_cmd(buf);
-            vim_snprintf(mess, BORE_MAX_PATH, "Project sln path: %s, Project file path: %s",
+            vim_snprintf(mess, BORE_MAX_PATH, "Project sln path: %s; Project file path: %s",
                 bore_str(g_bore, proj->project_sln_name), bore_str(g_bore, proj->project_file_path));
             MSG(_(mess));
         }
