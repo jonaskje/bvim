@@ -353,22 +353,15 @@ done:
 
 static int bore_extract_projects_and_files_from_dir(bore_t* b, const char* sln_path)
 {
-    // C:\WINDOWS\system32\cmd.exe /c (echo hej ^>C:\Users\Chronos\AppData\Local\Temp\VIo49B9.tmp 2^>^&1)
-
     BOOL is_git_repo;
     {
         ++emsg_silent;
         char *cmd = "git rev-parse --is-inside-work-tree";
         char* res = get_cmd_output(cmd, NULL, SHELL_READ & SHELL_SILENT, NULL);
-        is_git_repo = res && !STRCMP(res, "true");
+        is_git_repo = res && !STRNCMP(res, "true", 4);
         --emsg_silent;
     }
-
-    char* list_cmd = "dir /s /b /a-d";
-    if (is_git_repo)
-        list_cmd = "git ls-files";
-    else if (mch_can_exe("es", NULL, TRUE))
-        list_cmd = "es -s !folder: %cd%\\";
+    char* list_cmd = is_git_repo ? "git ls-files" : "dir /s /b /a-d";
 
     int len;
     char* files = get_cmd_output(list_cmd, 0, SHELL_READ & SHELL_SILENT, &len);
