@@ -1055,8 +1055,8 @@ erret:
 
 void bore_async_execute_update(DWORD flags)
 {
-    DWORD first = 0x80000000 & flags;
-    DWORD completed = 0x40000000 & flags;
+    DWORD first = flags & (1 << 31);
+    DWORD completed = flags & (1 << 30);
     DWORD bytes_read = 0;
     DWORD bytes_avail = 0;
     int errors = 0;
@@ -1622,11 +1622,14 @@ void ex_borebuild(exarg_T *eap)
 {
     if (!g_bore) {
         EMSG(_("Load a solution first with boresln"));
-    } else {
+    } else if (!mch_can_exe("msbuild", NULL, TRUE)) {
+        EMSG(_("Failed to find msbuild executable in path"));
+    }
+    else {
         char cmd[1024];
         bore_proj_t* proj = NULL;
         char* src_file = NULL;
-        char* platform = strstr(bore_str(g_bore, g_bore->sln_path), "vim_vs2010") != 0 ? "Win32" : "x64";
+        char* platform = strstr(bore_str(g_bore, g_bore->sln_path), "vim_vs2013") != 0 ? "Win32" : "x64";
         char* configuration = "Release";
         char* slndir = bore_str(g_bore, g_bore->sln_dir);
         int slndirlen = strlen(slndir);
@@ -1699,8 +1702,8 @@ void ex_borebuild(exarg_T *eap)
                 src_file += slndirlen;
 
             vim_snprintf(cmd, 1024,
-                "msbuild.exe %s /t:ClCompile /p:SelectedFiles=\"%s\" /p:Platform=%s /p:Configuration=%s " \
-                "/v:q /nologo",
+                "msbuild %s /t:ClCompile /p:SelectedFiles=\"%s\" /p:Platform=%s /p:Configuration=%s " \
+                "/v:q /nologo /fl /flp:ShowTimestamp;verbosity=normal",
                 proj_file, src_file, platform, configuration);
         }
         else {
@@ -1712,8 +1715,8 @@ void ex_borebuild(exarg_T *eap)
                 target = eap->forceit ? "Rebuild" : "Build";
 
             vim_snprintf(cmd, 1024,
-                "msbuild.exe %s /t:%s /p:Platform=%s /p:Configuration=%s " \
-                "/v:q /nologo " \
+                "msbuild %s /t:%s /p:Platform=%s /p:Configuration=%s " \
+                "/v:q /nologo /fl /flp:ShowTimestamp;verbosity=normal " \
                 "/p:BuildProjectReferences=true " \
                 "/m:%d /p:MultiProcessorCompilation=true;CL_MPCount=%d",
                 sln_file, target, platform, configuration,
