@@ -27,9 +27,11 @@ src/*.metagen
 src/*.obj
 src/*.pdb
 src/Debug
+src/Debug_Python
 src/GvimExt
 src/Obj*
 src/Release
+src/Release_Python
 src/vim_vs2013.log
 src/vim_vs2013.opensdf
 src/vim_vs2013.sdf

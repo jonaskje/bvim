@@ -1250,6 +1250,15 @@ _WndProc(
 	return 1L;
 #endif
 
+#ifdef FEAT_BORE
+    case WM_USER + 1234:
+    {
+	extern void bore_async_execute_update(DWORD flags);
+	bore_async_execute_update(lParam);
+	break;
+    } 
+#endif
+
     default:
 	if (uMsg == msh_msgmousewheel && msh_msgmousewheel != 0)
 	{   /* handle MSH_MOUSEWHEEL messages for Intellimouse */
