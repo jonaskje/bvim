@@ -155,6 +155,8 @@ struct search_context_t
     bore_t* b;
     LONG* remaining_file_count;
     bore_alloc_t filedata;
+    bore_alloc_t filedata_lowercase;
+    char* lowercase_table;
     const exact_string_search_t* string_search;
     bore_search_t* search;
     bore_match_t* match;
@@ -168,6 +170,9 @@ static void search_one_file(struct search_context_t* search_context, const char*
     HANDLE file_handle = INVALID_HANDLE_VALUE;
     bore_search_result_t search_result = {0};
     BORE_CVINITSPAN;
+
+    char* start = NULL;
+    int size = 0;
 
     {
         BORE_CVBEGINSPAN("opn");
@@ -196,13 +201,35 @@ static void search_one_file(struct search_context_t* search_context, const char*
         search_context->filedata.cursor = search_context->filedata.base;
         bore_alloc(&search_context->filedata, filesize);
 
-        char* p = (char*)search_context->filedata.base;
-        DWORD remaining = filesize;
-        while(remaining) {
-            DWORD readbytes;
-            if(!ReadFile(file_handle, p + filesize - remaining, remaining, &readbytes, 0))
-                goto skip;
-            remaining -= readbytes;
+        {
+            char* p = (char*)search_context->filedata.base;
+            DWORD remaining = filesize;
+            while(remaining) {
+                DWORD readbytes;
+                if(!ReadFile(file_handle, p + filesize - remaining, remaining, &readbytes, 0))
+                    goto skip;
+                remaining -= readbytes;
+            }
+        }
+
+        if (search_context->search->options & BS_IGNORECASE)
+        {
+            search_context->filedata_lowercase.cursor = search_context->filedata_lowercase.base;
+            bore_alloc(&search_context->filedata_lowercase, filesize);
+
+            char* dst = (char*)search_context->filedata_lowercase.base;
+            u8* src = search_context->filedata.base;
+            u8* end = src + filesize;
+            for ( ; src < end; ++src, ++dst)
+                *dst = search_context->lowercase_table[*src];
+
+            start = (char*)search_context->filedata_lowercase.base;
+            size = search_context->filedata_lowercase.cursor - search_context->filedata_lowercase.base;
+        }
+        else
+        {
+            start = (char*)search_context->filedata.base;
+            size = search_context->filedata.cursor - search_context->filedata.base;
         }
 
         BORE_CVENDSPAN();
@@ -215,8 +242,8 @@ static void search_one_file(struct search_context_t* search_context, const char*
         // Search for the text
         int match_offset[BORE_MAXMATCHPERFILE];
         int match_in_file = search_context->string_search->search(
-                (char*)search_context->filedata.base, 
-                search_context->filedata.cursor - search_context->filedata.base,
+                start, 
+                size,
                 search_context->search->what, 
                 search_context->search->what_len, 
                 &match_offset[0], 
@@ -329,6 +356,10 @@ int bore_dofind(bore_t* b, int thread_count, int* truncated_, bore_match_t* matc
         thread_count = 32;
     }
 
+    char lowercase_table[256];
+    for (int i = 0; i < 256; i++)
+        lowercase_table[i] = tolower(i);
+
     HANDLE threads[32] = {0};
     search_context_t search_contexts[32] = {0};
     LONG match_count = 0;
@@ -337,6 +368,8 @@ int bore_dofind(bore_t* b, int thread_count, int* truncated_, bore_match_t* matc
         search_contexts[i].b = b;
         search_contexts[i].remaining_file_count = &file_count;
         bore_prealloc(&search_contexts[i].filedata, 100000);
+        bore_prealloc(&search_contexts[i].filedata_lowercase, 100000);
+        search_contexts[i].lowercase_table = lowercase_table;
         search_contexts[i].string_search = &string_search;
         search_contexts[i].search = search;
         search_contexts[i].match = match;
@@ -363,6 +396,7 @@ int bore_dofind(bore_t* b, int thread_count, int* truncated_, bore_match_t* matc
     for (int i = 0; i < thread_count; ++i) 
     {
         bore_alloc_free(&search_contexts[i].filedata);
+        bore_alloc_free(&search_contexts[i].filedata_lowercase);
     }
 
     return match_count;
