@@ -838,11 +838,11 @@ static u32 bore_string_hash_n(const char *str, int n)
     return h + (h >> 5);
 }
 
-static void bore_display_search_result(bore_t* b, const char* filename, char* what, int found)
+static void bore_display_search_result(bore_t* b, const char* arg, const char* filename, int found)
 {
     exarg_T eap;
     char* title = (char*)alloc(100);
-    vim_snprintf(title, 100, "borefind \"%s\"; %d%s matching lines", what, found > 0 ? found : -found, found < 0 ? " (truncated)" : "");
+    vim_snprintf(title, 100, "borefind %s; %d%s matching lines", arg, found > 0 ? found : -found, found < 0 ? " (truncated)" : "");
 
     memset(&eap, 0, sizeof(eap));
     eap.cmdidx = CMD_cgetfile;
@@ -870,17 +870,15 @@ static void bore_save_match_to_file(bore_t* b, FILE* cf, const bore_match_t* mat
     }
 }
 
-static int bore_find(bore_t* b, char* what, char* what_ext)
+static int bore_find(bore_t* b, const char* arg, bore_search_t* search)
 {
-    enum { MaxMatch = 1000 };
-    bore_file_t* files = (bore_file_t*)b->file_alloc.base;
     int found = 0;
     char_u *tmp = vim_tempname('f', TRUE);
     FILE* cf = 0;
     bore_match_t* match = 0;
     int truncated = 0;
 
-    match = (bore_match_t*)alloc(MaxMatch * sizeof(bore_match_t));
+    match = (bore_match_t*)alloc(search->match_count * sizeof(bore_match_t));
 
     int threadCount = 4;
     const char_u* threadCountStr = get_var_value((char_u *)"g:bore_search_thread_count");
@@ -889,36 +887,7 @@ static int bore_find(bore_t* b, char* what, char* what_ext)
         threadCount = atoi(threadCountStr);
     }
 
-    bore_search_t search;
-    search.what = what;
-    search.what_len = strlen(what);
-    search.ext_count = 0;
-
-    // parse comma separated list of file extensions into list of hashes
-    if (what_ext)
-    {
-        int len = 0;
-        char* ext = what_ext;
-        char* c;
-        for (c = ext; search.ext_count < BORE_MAX_SEARCH_EXTENSIONS; ++c)
-        {
-            if (*c == ',' || *c == '\0')
-            {
-                search.ext[search.ext_count++] = bore_string_hash_n(ext, len);
-                ext = c + 1;
-                len = 0;
-            }
-            else
-            {
-                ++len;
-            }
-
-            if (*c == '\0')
-                break;
-        }
-    }
-
-    found = bore_dofind(b, threadCount, &truncated, match, MaxMatch, &search);
+    found = bore_dofind(b, threadCount, &truncated, match, search->match_count, search);
     if (0 == found)
         goto fail;
 
@@ -931,7 +900,7 @@ static int bore_find(bore_t* b, char* what, char* what_ext)
 
     fclose(cf);
 
-    bore_display_search_result(b, tmp, what, truncated ? -found : found);
+    bore_display_search_result(b, arg, tmp, truncated ? -found : found);
     mch_remove(tmp);
 fail:
     vim_free(tmp);
@@ -1344,18 +1313,21 @@ void ex_boresln(exarg_T *eap)
     }
 }
 
-void borefind_parse_options(char* arg, char** what, char** what_ext)
+void borefind_parse_options(char* arg, bore_search_t* search)
 {
     // Usage: [option(s)] what
-    //   -e ext1,ext2,...,ext12
+    //   -i ignore case
+    //   -e ext1,ext2,...,ext10
     //      filters the search based on a list of file extensions
     //   - 
     //   -u
     //      an empty (or any unknown) option will force the remainder to be treated as the search string
 
     char* opt = NUL;
-    *what = arg;
-    *what_ext = NUL;
+    char* what = arg;
+    char* what_ext = NUL;
+    int options = BS_NONE;
+    enum { MaxMatch = 1000 };
 
     for (; *arg; ++arg)
     {
@@ -1369,20 +1341,26 @@ void borefind_parse_options(char* arg, char** what, char** what_ext)
                 {
                     // found extension option argument start, loop until next space
                     opt = arg;
-                    *what_ext = &opt[2];
+                    what_ext = &opt[2];
                     arg += 2;
+                }
+                else if (*arg == 'i' && arg[1] == ' ')
+                {
+                    // found ignore case option
+                    options |= BS_IGNORECASE;
+                    ++arg;
                 }
                 else
                 {
                     // empty or unknown option, treat the rest as the search string
-                    *what = arg + 1;
+                    what = arg + 1;
                     break;
                 }
             }
             else
             {
                 // no option found, treat the rest as the search string
-                *what = arg;
+                what = arg;
                 break;
             }
         }
@@ -1393,6 +1371,46 @@ void borefind_parse_options(char* arg, char** what, char** what_ext)
             *arg = '\0';
         }
     }
+
+    // convert search string to lower case
+    if (options & BS_IGNORECASE)
+    {
+        // _strlwr_s(what, search.what_len);
+        char* c = what;
+        for (; *c; ++c)
+            *c = tolower(*c);
+    }
+
+    search->what = what;
+    search->what_len = strlen(what);
+    search->options = options;
+    search->match_count = MaxMatch;
+    search->ext_count = 0;
+
+    // parse comma separated list of file extensions into list of hashes
+    if (what_ext)
+    {
+        int len = 0;
+        char* ext = what_ext;
+        char* c;
+        for (c = ext; search->ext_count < BORE_MAX_SEARCH_EXTENSIONS; ++c)
+        {
+            if (*c == ',' || *c == '\0')
+            {
+                search->ext[search->ext_count++] = bore_string_hash_n(ext, len);
+                ext = c + 1;
+                len = 0;
+            }
+            else
+            {
+                ++len;
+            }
+
+            if (*c == '\0')
+                break;
+        }
+    }
+
 }
 
 void ex_borefind(exarg_T *eap)
@@ -1404,22 +1422,21 @@ void ex_borefind(exarg_T *eap)
         DWORD start = GetTickCount();
         DWORD elapsed;
         char mess[100];
-        char* what;
-        char* what_ext;
+        bore_search_t search;
+        int arg_size = strlen(eap->arg) + 1;
+        char* arg = alloc(arg_size);
+        memcpy(arg, eap->arg, arg_size);
 
-        borefind_parse_options((char*)eap->arg, &what, &what_ext);
-        int found = bore_find(g_bore, what, what_ext);
+        borefind_parse_options(arg, &search);
+        int found = bore_find(g_bore, (char*)eap->arg, &search);
         elapsed = GetTickCount() - start;
+        vim_snprintf(mess, 100, "%d%s matching lines; borefind %s; %u ms", found > 0 ? found : -found, found < 0 ? " (truncated)" : "", (char*)eap->arg, elapsed);
         if (found)
-        {
-            vim_snprintf(mess, 100, "%d%s matching lines for \"%s\"; %u ms", found > 0 ? found : -found, found < 0 ? " (truncated)" : "", what, elapsed);
             MSG(_(mess));
-        }
         else
-        {
-            vim_snprintf(mess, 100, "No matching lines for \"%s\"; %u ms", what, elapsed);
             EMSG(_(mess));
-        }
+
+        vim_free(arg);
     }
 }
 

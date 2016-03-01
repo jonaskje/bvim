@@ -8,7 +8,7 @@
 #define BORE_SEARCH_RESULTS 8
 #define BORE_CACHELINE 64 
 #define BORE_MAXMATCHPERFILE 100
-#define BORE_MAX_SEARCH_EXTENSIONS 12
+#define BORE_MAX_SEARCH_EXTENSIONS 10
 
 typedef unsigned char u8;
 typedef unsigned int u32;
@@ -27,11 +27,18 @@ typedef struct bore_proj_t {
     u32 project_file_path;
 } bore_proj_t;
 
+typedef enum {
+    BS_NONE = 0,
+    BS_IGNORECASE = 1
+} bore_search_option_t;
+
 typedef struct bore_search_t {
     const char* what;
     int what_len;
+    int options;
+    int match_count;
     int ext_count;
-    u32 ext[BORE_MAX_SEARCH_EXTENSIONS]; // (64-16)/4
+    u32 ext[BORE_MAX_SEARCH_EXTENSIONS]; // (64-24)/4
 } bore_search_t;
 
 typedef struct bore_match_t {
