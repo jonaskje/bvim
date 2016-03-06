@@ -2422,7 +2422,7 @@ serverSetName(char_u *name)
 {
     char_u	*ok_name;
     HWND	hwnd = 0;
-    int		i = 0;
+    int		i = 1;
     char_u	*p;
 
     /* Leave enough space for a 9-digit suffix to ensure uniqueness! */
@@ -2438,19 +2438,19 @@ serverSetName(char_u *name)
 	 * and scan the list each time...
 	 */
 	hwnd = findServer(ok_name);
-	if (hwnd == 0)
+	if (hwnd == 0 || hwnd == message_window)
 	    break;
 
 	++i;
 	if (i >= 1000)
 	    break;
 
-	sprintf((char *)p, "%d", i);
+	sprintf((char *)p, "-%d", i);
     }
 
     if (hwnd != 0)
 	vim_free(ok_name);
-    else
+    else if (hwnd != message_window)
     {
 	/* Remember the name */
 	serverName = ok_name;
