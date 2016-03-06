@@ -733,7 +733,9 @@ static void bore_load_sln(const char* path)
     do_cmdline_cmd(buf);
     --msg_silent;
 
-    serverSetName(bore_str(b, b->sln_name));
+    // 'g' in servername tells vim it is a gui server and brings it to foreground
+    sprintf(buf, "g-%s", bore_str(b, b->sln_name));
+    serverSetName(buf);
 
     bore_load_ini(&b->ini, bore_str(b, b->sln_dir));
 
