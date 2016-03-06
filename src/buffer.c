@@ -3350,17 +3350,28 @@ maketitle(void)
 	}
 	else
 	{
-	    /* format: "fname + (path) (1 of 2) - VIM" */
+	    /* format: "VIM - fname + (path) (1 of 2)" */
 
-#define SPACE_FOR_FNAME (IOSIZE - 100)
-#define SPACE_FOR_DIR   (IOSIZE - 20)
-#define SPACE_FOR_ARGNR (IOSIZE - 10)  /* at least room for " - VIM" */
+#define SPACE_FOR_FNAME (IOSIZE - 80)
+#define SPACE_FOR_DIR   (IOSIZE - 10)
+#define SPACE_FOR_ARGNR (IOSIZE - 0)
+	    *buf = 0;
+#if defined(FEAT_CLIENTSERVER)
+	    if (serverName != NULL)
+	    {
+		vim_strcat(buf, serverName, IOSIZE);
+		STRCAT(buf, " - ");
+	    }
+	    else
+#endif
+		STRCAT(buf, "VIM - ");
+	    off = (int)STRLEN(buf);
 	    if (curbuf->b_fname == NULL)
-		vim_strncpy(buf, (char_u *)_("[No Name]"), SPACE_FOR_FNAME);
+		vim_strncpy(buf + off, (char_u *)_("[No Name]"), SPACE_FOR_FNAME);
 	    else
 	    {
 		p = transstr(gettail(curbuf->b_fname));
-		vim_strncpy(buf, p, SPACE_FOR_FNAME);
+		vim_strncpy(buf + off, p, SPACE_FOR_FNAME);
 		vim_free(p);
 	    }
 
@@ -3418,6 +3429,7 @@ maketitle(void)
 
 	    append_arg_number(curwin, buf, SPACE_FOR_ARGNR, FALSE);
 
+#if 0
 #if defined(FEAT_CLIENTSERVER)
 	    if (serverName != NULL)
 	    {
@@ -3427,6 +3439,7 @@ maketitle(void)
 	    else
 #endif
 		STRCAT(buf, " - VIM");
+#endif
 
 	    if (maxlen > 0)
 	    {
