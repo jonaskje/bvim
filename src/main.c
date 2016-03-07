@@ -3769,8 +3769,13 @@ cmdsrv_main(
 	    /* Guess that when the server name starts with "g" it's a GUI
 	     * server, which we can bring to the foreground here.
 	     * Foreground() in the server doesn't work very well. */
+# ifdef FEAT_BORE
+	    if (argtype != ARGTYPE_SEND)
+		SetForegroundWindow(srv);
+# else
 	    if (argtype != ARGTYPE_SEND && TOUPPER_ASC(*sname) == 'G')
 		SetForegroundWindow(srv);
+# endif
 # endif
 
 	    /*
