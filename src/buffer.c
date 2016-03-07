@@ -3350,21 +3350,26 @@ maketitle(void)
 	}
 	else
 	{
+	    *buf = 0;
+#if defined(FEAT_BORE) && defined(FEAT_CLIENTSERVER)
 	    /* format: "VIM - fname + (path) (1 of 2)" */
 
 #define SPACE_FOR_FNAME (IOSIZE - 80)
 #define SPACE_FOR_DIR   (IOSIZE - 10)
 #define SPACE_FOR_ARGNR (IOSIZE - 0)
-	    *buf = 0;
-#if defined(FEAT_CLIENTSERVER)
+
 	    if (serverName != NULL)
 	    {
-		vim_strcat(buf, serverName, IOSIZE);
-		STRCAT(buf, " - ");
+		vim_strncpy(buf, serverName, IOSIZE);
+		vim_strcat(buf, " - ", IOSIZE);
 	    }
-	    else
+#else
+	    /* format: "fname + (path) (1 of 2) - VIM" */
+
+#define SPACE_FOR_FNAME (IOSIZE - 100)
+#define SPACE_FOR_DIR   (IOSIZE - 20)
+#define SPACE_FOR_ARGNR (IOSIZE - 10)  /* at least room for " - VIM" */
 #endif
-		STRCAT(buf, "VIM - ");
 	    off = (int)STRLEN(buf);
 	    if (curbuf->b_fname == NULL)
 		vim_strncpy(buf + off, (char_u *)_("[No Name]"), SPACE_FOR_FNAME);
@@ -3429,7 +3434,7 @@ maketitle(void)
 
 	    append_arg_number(curwin, buf, SPACE_FOR_ARGNR, FALSE);
 
-#if 0
+#ifndef FEAT_BORE
 #if defined(FEAT_CLIENTSERVER)
 	    if (serverName != NULL)
 	    {
