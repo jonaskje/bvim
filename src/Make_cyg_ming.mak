@@ -42,7 +42,7 @@ DIRECTX=no
 FEATURES=HUGE
 # Set to one of i386, i486, i586, i686 as the minimum target processor.
 # For amd64/x64 architecture set ARCH=x86-64 .
-ARCH=i386
+ARCH=i686
 # Set to yes to cross-compile from unix; no=native Windows (and Cygwin).
 CROSS=no
 # Set to path to iconv.h and libiconv.a to enable using 'iconv.dll'.
@@ -58,9 +58,9 @@ DYNAMIC_IME=yes
 POSTSCRIPT=no
 # Set to yes to enable OLE support.
 OLE=no
-# Set the default $(WINVER) to make it work with pre-Win2k.
+# Set the default $(WINVER) to make it work with WinXP.
 ifndef WINVER
-WINVER = 0x0500
+WINVER = 0x0501
 endif
 # Set to yes to enable Cscope support.
 CSCOPE=yes
@@ -264,7 +264,7 @@ ifndef DYNAMIC_PYTHON3_DLL
 DYNAMIC_PYTHON3_DLL=python$(PYTHON3_VER).dll
 endif
 ifdef PYTHON3_HOME
-PYTHON3_HOME_DEF=-DPYTHON3_HOME=\"$(PYTHON3_HOME)\"
+PYTHON3_HOME_DEF=-DPYTHON3_HOME=L\"$(PYTHON3_HOME)\"
 endif
 
 ifeq (no,$(DYNAMIC_PYTHON3))
@@ -414,7 +414,8 @@ WINDRES_CC = $(CC)
 #>>>>> end of choices
 ###########################################################################
 
-CFLAGS = -Iproto $(DEFINES) -pipe -w -march=$(ARCH) -Wall
+CFLAGS = -Iproto $(DEFINES) -pipe -march=$(ARCH) -Wall
+CXXFLAGS = -std=gnu++11
 WINDRES_FLAGS = --preprocessor="$(WINDRES_CC) -E -xc" -DRC_INVOKED
 EXTRA_LIBS =
 
@@ -483,14 +484,14 @@ endif
 endif
 
 ifdef PYTHON
-CFLAGS += -DFEAT_PYTHON 
+CFLAGS += -DFEAT_PYTHON
 ifeq (yes, $(DYNAMIC_PYTHON))
 CFLAGS += -DDYNAMIC_PYTHON -DDYNAMIC_PYTHON_DLL=\"$(DYNAMIC_PYTHON_DLL)\"
 endif
 endif
 
-ifdef PYTHON3 
-CFLAGS += -DFEAT_PYTHON3 
+ifdef PYTHON3
+CFLAGS += -DFEAT_PYTHON3
 ifeq (yes, $(DYNAMIC_PYTHON3))
 CFLAGS += -DDYNAMIC_PYTHON3 -DDYNAMIC_PYTHON3_DLL=\"$(DYNAMIC_PYTHON3_DLL)\"
 endif
@@ -529,7 +530,7 @@ endif
 endif
 
 ifeq ($(CHANNEL),yes)
-DEFINES += -DFEAT_CHANNEL
+DEFINES += -DFEAT_JOB_CHANNEL
 endif
 
 # DirectWrite (DirectX)
@@ -679,19 +680,18 @@ ifneq ($(CHANNEL),yes)
 # Cannot use Netbeans without CHANNEL
 NETBEANS=no
 else
-# Only allow NETBEANS for a GUI build.
-ifeq (yes, $(GUI))
+ifneq (yes, $(GUI))
+# Cannot use Netbeans without GUI.
+NETBEANS=no
+else
 OBJ += $(OUTDIR)/netbeans.o
-LIB += -lwsock32
 endif
 endif
 endif
 
 ifeq ($(CHANNEL),yes)
 OBJ += $(OUTDIR)/channel.o
-ifneq ($(NETBEANS),yes)
 LIB += -lwsock32
-endif
 endif
 
 ifeq ($(DIRECTX),yes)
@@ -861,18 +861,18 @@ $(OUTDIR)/ex_docmd.o:	ex_docmd.c $(INCL) ex_cmds.h
 $(OUTDIR)/ex_eval.o:	ex_eval.c $(INCL) ex_cmds.h
 	$(CC) -c $(CFLAGS) ex_eval.c -o $(OUTDIR)/ex_eval.o
 
-$(OUTDIR)/gui_w32.o:	gui_w32.c gui_w48.c $(INCL)
+$(OUTDIR)/gui_w32.o:	gui_w32.c $(INCL)
 	$(CC) -c $(CFLAGS) gui_w32.c -o $(OUTDIR)/gui_w32.o
 
 $(OUTDIR)/gui_dwrite.o:	gui_dwrite.cpp $(INCL) gui_dwrite.h
-	$(CC) -c $(CFLAGS) gui_dwrite.cpp -o $(OUTDIR)/gui_dwrite.o
+	$(CC) -c $(CFLAGS) $(CXXFLAGS) gui_dwrite.cpp -o $(OUTDIR)/gui_dwrite.o
 
 $(OUTDIR)/if_cscope.o:	if_cscope.c $(INCL) if_cscope.h
 	$(CC) -c $(CFLAGS) if_cscope.c -o $(OUTDIR)/if_cscope.o
 
 # Remove -D__IID_DEFINED__ for newer versions of the w32api
 $(OUTDIR)/if_ole.o: if_ole.cpp $(INCL)
-	$(CC) $(CFLAGS) -c -o $(OUTDIR)/if_ole.o if_ole.cpp
+	$(CC) $(CFLAGS) $(CXXFLAGS) -c -o $(OUTDIR)/if_ole.o if_ole.cpp
 
 $(OUTDIR)/if_ruby.o: if_ruby.c $(INCL)
 ifeq (16, $(RUBY))

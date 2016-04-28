@@ -126,7 +126,7 @@ static int	qf_win_pos_update(qf_info_T *qi, int old_qf_index);
 static int	is_qf_win(win_T *win, qf_info_T *qi);
 static win_T	*qf_find_win(qf_info_T *qi);
 static buf_T	*qf_find_buf(qf_info_T *qi);
-static void	qf_update_buffer(qf_info_T *qi);
+static void	qf_update_buffer(qf_info_T *qi, int update_cursor);
 static void	qf_set_title_var(qf_info_T *qi);
 static void	qf_fill_buffer(qf_info_T *qi);
 #endif
@@ -532,7 +532,8 @@ qf_init_ext(
 		else if (tv->v_type == VAR_LIST)
 		{
 		    /* Get the next line from the supplied list */
-		    while (p_li && p_li->li_tv.v_type != VAR_STRING)
+		    while (p_li && (p_li->li_tv.v_type != VAR_STRING
+				|| p_li->li_tv.vval.v_string == NULL))
 			p_li = p_li->li_next;	/* Skip non-string items */
 
 		    if (!p_li)			/* End of the list */
@@ -879,7 +880,7 @@ qf_init_end:
     vim_free(fmtstr);
 
 #ifdef FEAT_WINDOWS
-    qf_update_buffer(qi);
+    qf_update_buffer(qi, TRUE);
 #endif
 
     return retval;
@@ -1027,6 +1028,8 @@ qf_add_entry(
 				/* first element in the list */
     {
 	qi->qf_lists[qi->qf_curlist].qf_start = qfp;
+	qi->qf_lists[qi->qf_curlist].qf_ptr = qfp;
+	qi->qf_lists[qi->qf_curlist].qf_index = 0;
 	qfp->qf_prev = qfp;	/* first element points to itself */
     }
     else
@@ -1413,6 +1416,33 @@ qf_guess_filepath(char_u *filename)
 }
 
 /*
+ * When loading a file from the quickfix, the auto commands may modify it.
+ * This may invalidate the current quickfix entry.  This function checks
+ * whether a entry is still present in the quickfix.
+ * Similar to location list.
+ */
+    static int
+is_qf_entry_present(qf_info_T *qi, qfline_T *qf_ptr)
+{
+    qf_list_T	*qfl;
+    qfline_T	*qfp;
+    int		i;
+
+    qfl = &qi->qf_lists[qi->qf_curlist];
+
+    /* Search for the entry in the current list */
+    for (i = 0, qfp = qfl->qf_start; i < qfl->qf_count;
+	    ++i, qfp = qfp->qf_next)
+	if (qfp == qf_ptr)
+	    break;
+
+    if (i == qfl->qf_count) /* Entry is not found */
+	return FALSE;
+
+    return TRUE;
+}
+
+/*
  * jump to a quickfix line
  * if dir == FORWARD go "errornr" valid entries forward
  * if dir == BACKWARD go "errornr" valid entries backward
@@ -1578,11 +1608,9 @@ qf_jump(
 	     * specified, the current window is vertically split and narrow.
 	     */
 	    flags = WSP_HELP;
-# ifdef FEAT_VERTSPLIT
 	    if (cmdmod.split == 0 && curwin->w_width != Columns
 						      && curwin->w_width < 80)
 		flags |= WSP_TOP;
-# endif
 	    if (qi != &ql_info)
 		flags |= WSP_NEWLOC;  /* don't copy the location list */
 
@@ -1795,8 +1823,35 @@ win_found:
 					   oldwin == curwin ? curwin : NULL);
 	}
 	else
+	{
+	    int old_qf_curlist = qi->qf_curlist;
+	    int is_abort = FALSE;
+
 	    ok = buflist_getfile(qf_ptr->qf_fnum,
 			    (linenr_T)1, GETF_SETMARK | GETF_SWITCH, forceit);
+	    if (qi != &ql_info && !win_valid(oldwin))
+	    {
+		EMSG(_("E924: Current window was closed"));
+		is_abort = TRUE;
+		opened_window = FALSE;
+	    }
+	    else if (old_qf_curlist != qi->qf_curlist
+		    || !is_qf_entry_present(qi, qf_ptr))
+	    {
+		if (qi == &ql_info)
+		    EMSG(_("E925: Current quickfix was changed"));
+		else
+		    EMSG(_("E926: Current location list was changed"));
+		is_abort = TRUE;
+	    }
+
+	    if (is_abort)
+	    {
+		ok = FALSE;
+		qi = NULL;
+		qf_ptr = NULL;
+	    }
+	}
     }
 
     if (ok == OK)
@@ -1899,7 +1954,7 @@ win_found:
 	if (opened_window)
 	    win_close(curwin, TRUE);    /* Close opened window */
 #endif
-	if (qf_ptr->qf_fnum != 0)
+	if (qf_ptr != NULL && qf_ptr->qf_fnum != 0)
 	{
 	    /*
 	     * Couldn't open file, so put index back where it was.  This could
@@ -1913,8 +1968,11 @@ failed:
 	}
     }
 theend:
-    qi->qf_lists[qi->qf_curlist].qf_ptr = qf_ptr;
-    qi->qf_lists[qi->qf_curlist].qf_index = qf_index;
+    if (qi != NULL)
+    {
+	qi->qf_lists[qi->qf_curlist].qf_ptr = qf_ptr;
+	qi->qf_lists[qi->qf_curlist].qf_index = qf_index;
+    }
 #ifdef FEAT_WINDOWS
     if (p_swb != old_swb && opened_window)
     {
@@ -2118,7 +2176,7 @@ qf_msg(qf_info_T *qi)
 	    qi->qf_curlist + 1, qi->qf_listcount,
 	    qi->qf_lists[qi->qf_curlist].qf_count);
 #ifdef FEAT_WINDOWS
-    qf_update_buffer(qi);
+    qf_update_buffer(qi, TRUE);
 #endif
 }
 
@@ -2388,15 +2446,12 @@ ex_copen(exarg_T *eap)
 	win_goto(win);
 	if (eap->addr_count != 0)
 	{
-#ifdef FEAT_VERTSPLIT
 	    if (cmdmod.split & WSP_VERT)
 	    {
 		if (height != W_WIDTH(win))
 		    win_setwidth(height);
 	    }
-	    else
-#endif
-	    if (height != win->w_height)
+	    else if (height != win->w_height)
 		win_setheight(height);
 	}
     }
@@ -2453,11 +2508,7 @@ ex_copen(exarg_T *eap)
 
 	/* Only set the height when still in the same tab page and there is no
 	 * window to the side. */
-	if (curtab == prevtab
-#ifdef FEAT_VERTSPLIT
-		&& curwin->w_width == Columns
-#endif
-	   )
+	if (curtab == prevtab && curwin->w_width == Columns)
 	    win_setheight(height);
 	curwin->w_p_wfh = TRUE;	    /* set 'winfixheight' */
 	if (win_valid(win))
@@ -2597,7 +2648,7 @@ qf_find_buf(qf_info_T *qi)
  * Find the quickfix buffer.  If it exists, update the contents.
  */
     static void
-qf_update_buffer(qf_info_T *qi)
+qf_update_buffer(qf_info_T *qi, int update_cursor)
 {
     buf_T	*buf;
     win_T	*win;
@@ -2624,7 +2675,8 @@ qf_update_buffer(qf_info_T *qi)
 	/* restore curwin/curbuf and a few other things */
 	aucmd_restbuf(&aco);
 
-	(void)qf_win_pos_update(qi, 0);
+	if (update_cursor)
+	    (void)qf_win_pos_update(qi, 0);
     }
 }
 
@@ -3328,6 +3380,7 @@ ex_vimgrep(exarg_T *eap)
     int		fcount;
     char_u	**fnames;
     char_u	*fname;
+    char_u	*title;
     char_u	*s;
     char_u	*p;
     int		fi;
@@ -3396,6 +3449,7 @@ ex_vimgrep(exarg_T *eap)
 
     /* Get the search pattern: either white-separated or enclosed in // */
     regmatch.regprog = NULL;
+    title = vim_strsave(*eap->cmdlinep);
     p = skip_vimgrep_pat(eap->arg, &s, &flags);
     if (p == NULL)
     {
@@ -3432,7 +3486,7 @@ ex_vimgrep(exarg_T *eap)
 	 eap->cmdidx != CMD_vimgrepadd && eap->cmdidx != CMD_lvimgrepadd)
 					|| qi->qf_curlist == qi->qf_listcount)
 	/* make place for a new list */
-	qf_new_list(qi, *eap->cmdlinep);
+	qf_new_list(qi, title != NULL ? title : *eap->cmdlinep);
     else if (qi->qf_lists[qi->qf_curlist].qf_count > 0)
 	/* Adding to existing list, find last entry. */
 	for (prevp = qi->qf_lists[qi->qf_curlist].qf_start;
@@ -3664,7 +3718,7 @@ ex_vimgrep(exarg_T *eap)
     qi->qf_lists[qi->qf_curlist].qf_index = 1;
 
 #ifdef FEAT_WINDOWS
-    qf_update_buffer(qi);
+    qf_update_buffer(qi, TRUE);
 #endif
 
 #ifdef FEAT_AUTOCMD
@@ -3711,6 +3765,7 @@ ex_vimgrep(exarg_T *eap)
     }
 
 theend:
+    vim_free(title);
     vim_free(dirname_now);
     vim_free(dirname_start);
     vim_free(target_dir);
@@ -4103,11 +4158,16 @@ set_errorlist(
 	qi->qf_lists[qi->qf_curlist].qf_nonevalid = TRUE;
     else
 	qi->qf_lists[qi->qf_curlist].qf_nonevalid = FALSE;
-    qi->qf_lists[qi->qf_curlist].qf_ptr = qi->qf_lists[qi->qf_curlist].qf_start;
-    qi->qf_lists[qi->qf_curlist].qf_index = 1;
+    if (action != 'a') {
+	qi->qf_lists[qi->qf_curlist].qf_ptr =
+	    qi->qf_lists[qi->qf_curlist].qf_start;
+	if (qi->qf_lists[qi->qf_curlist].qf_count > 0)
+	    qi->qf_lists[qi->qf_curlist].qf_index = 1;
+    }
 
 #ifdef FEAT_WINDOWS
-    qf_update_buffer(qi);
+    /* Don't update the cursor in quickfix window when appending entries */
+    qf_update_buffer(qi, (action != 'a'));
 #endif
 
     return retval;
@@ -4414,7 +4474,7 @@ ex_helpgrep(exarg_T *eap)
 	free_string_option(save_cpo);
 
 #ifdef FEAT_WINDOWS
-    qf_update_buffer(qi);
+    qf_update_buffer(qi, TRUE);
 #endif
 
 #ifdef FEAT_AUTOCMD

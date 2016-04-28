@@ -145,7 +145,7 @@ static Scheme_Object *get_window_num(void *, int, Scheme_Object **);
 static Scheme_Object *get_window_buffer(void *, int, Scheme_Object **);
 static Scheme_Object *get_window_height(void *, int, Scheme_Object **);
 static Scheme_Object *set_window_height(void *, int, Scheme_Object **);
-#ifdef FEAT_VERTSPLIT
+#ifdef FEAT_WINDOWS
 static Scheme_Object *get_window_width(void *, int, Scheme_Object **);
 static Scheme_Object *set_window_width(void *, int, Scheme_Object **);
 #endif
@@ -852,7 +852,11 @@ static int mz_threads_allow = 0;
 static void CALLBACK timer_proc(HWND, UINT, UINT, DWORD);
 static UINT timer_id = 0;
 #elif defined(FEAT_GUI_GTK)
+# if GTK_CHECK_VERSION(3,0,0)
+static gboolean timer_proc(gpointer);
+# else
 static gint timer_proc(gpointer);
+# endif
 static guint timer_id = 0;
 #elif defined(FEAT_GUI_MOTIF) || defined(FEAT_GUI_ATHENA)
 static void timer_proc(XtPointer, XtIntervalId *);
@@ -892,7 +896,11 @@ static void remove_timer(void);
     static void CALLBACK
 timer_proc(HWND hwnd UNUSED, UINT uMsg UNUSED, UINT idEvent UNUSED, DWORD dwTime UNUSED)
 # elif defined(FEAT_GUI_GTK)
+#  if GTK_CHECK_VERSION(3,0,0)
+    static gboolean
+#  else
     static gint
+#  endif
 timer_proc(gpointer data UNUSED)
 # elif defined(FEAT_GUI_MOTIF) || defined(FEAT_GUI_ATHENA)
     static void
@@ -919,7 +927,11 @@ setup_timer(void)
 # if defined(FEAT_GUI_W32)
     timer_id = SetTimer(NULL, 0, p_mzq, timer_proc);
 # elif defined(FEAT_GUI_GTK)
+#  if GTK_CHECK_VERSION(3,0,0)
+    timer_id = g_timeout_add((guint)p_mzq, (GSourceFunc)timer_proc, NULL);
+#  else
     timer_id = gtk_timeout_add((guint32)p_mzq, (GtkFunction)timer_proc, NULL);
+#  endif
 # elif defined(FEAT_GUI_MOTIF) || defined(FEAT_GUI_ATHENA)
     timer_id = XtAppAddTimeOut(app_context, p_mzq, timer_proc, NULL);
 # elif defined(FEAT_GUI_MAC)
@@ -935,7 +947,11 @@ remove_timer(void)
 # if defined(FEAT_GUI_W32)
     KillTimer(NULL, timer_id);
 # elif defined(FEAT_GUI_GTK)
+#  if GTK_CHECK_VERSION(3,0,0)
+    g_source_remove(timer_id);
+#  else
     gtk_timeout_remove(timer_id);
+#  endif
 # elif defined(FEAT_GUI_MOTIF) || defined(FEAT_GUI_ATHENA)
     XtRemoveTimeOut(timer_id);
 # elif defined(FEAT_GUI_MAC)
@@ -1057,7 +1073,7 @@ load_base_module(void *data)
 }
 
     static Scheme_Object *
-load_base_module_on_error(void *data)
+load_base_module_on_error(void *data UNUSED)
 {
     load_base_module_failed = TRUE;
     return scheme_null;
@@ -1101,10 +1117,10 @@ startup_mzscheme(void)
 	MZ_GC_VAR_IN_REG(0, coll_path);
 	MZ_GC_REG();
 	/* workaround for dynamic loading on windows */
-	s = vim_getenv("PLTCOLLECTS", &mustfree);
+	s = vim_getenv((char_u *)"PLTCOLLECTS", &mustfree);
 	if (s != NULL)
 	{
-	    coll_path = scheme_make_path(s);
+	    coll_path = scheme_make_path((char *)s);
 	    MZ_GC_CHECK();
 	    if (mustfree)
 		vim_free(s);
@@ -2050,7 +2066,7 @@ set_window_height(void *data, int argc, Scheme_Object **argv)
     return scheme_void;
 }
 
-#ifdef FEAT_VERTSPLIT
+#ifdef FEAT_WINDOWS
 /* (get-win-width [window]) */
     static Scheme_Object *
 get_window_width(void *data, int argc, Scheme_Object **argv)
@@ -3093,6 +3109,7 @@ vim_to_mzscheme_impl(typval_T *vim_value, int depth, Scheme_Hash_Table *visited)
 	MZ_GC_VAR_IN_REG(0, funcname);
 	MZ_GC_REG();
 
+	/* FIXME: func_ref() and func_unref() are needed. */
 	funcname = scheme_make_byte_string((char *)vim_value->vval.v_string);
 	MZ_GC_CHECK();
 	result = scheme_make_closed_prim_w_arity(vim_funcref, funcname,
@@ -3100,6 +3117,30 @@ vim_to_mzscheme_impl(typval_T *vim_value, int depth, Scheme_Hash_Table *visited)
 	MZ_GC_CHECK();
 
 	MZ_GC_UNREG();
+    }
+    else if (vim_value->v_type == VAR_PARTIAL)
+    {
+	if (vim_value->vval.v_partial == NULL)
+	    result = scheme_null;
+	else
+	{
+	    Scheme_Object *funcname = NULL;
+
+	    MZ_GC_DECL_REG(1);
+	    MZ_GC_VAR_IN_REG(0, funcname);
+	    MZ_GC_REG();
+
+	    /* FIXME: func_ref() and func_unref() are needed. */
+	    /* TODO: Support pt_dict and pt_argv. */
+	    funcname = scheme_make_byte_string(
+		    (char *)vim_value->vval.v_partial->pt_name);
+	    MZ_GC_CHECK();
+	    result = scheme_make_closed_prim_w_arity(vim_funcref, funcname,
+		    (const char *)BYTE_STRING_VALUE(funcname), 0, -1);
+	    MZ_GC_CHECK();
+
+	    MZ_GC_UNREG();
+	}
     }
     else if (vim_value->v_type == VAR_SPECIAL)
     {
@@ -3702,7 +3743,7 @@ static Vim_Prim prims[]=
     {get_window_buffer, "get-win-buffer", 0, 1},
     {get_window_height, "get-win-height", 0, 1},
     {set_window_height, "set-win-height", 1, 2},
-#ifdef FEAT_VERTSPLIT
+#ifdef FEAT_WINDOWS
     {get_window_width, "get-win-width", 0, 1},
     {set_window_width, "set-win-width", 1, 2},
 #endif

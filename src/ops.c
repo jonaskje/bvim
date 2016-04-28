@@ -410,7 +410,15 @@ shift_block(oparg_T *oap, int amount)
 	{
 #ifdef FEAT_MBYTE
 	    if (has_mbyte)
-		bd.textstart += (*mb_ptr2len)(bd.textstart);
+	    {
+		if ((*mb_ptr2len)(bd.textstart) == 1)
+		    ++bd.textstart;
+		else
+		{
+		    ws_vcol = 0;
+		    bd.startspaces = 0;
+		}
+	    }
 	    else
 #endif
 		++bd.textstart;
@@ -5701,7 +5709,7 @@ do_addsub(
 	if (buf1 == NULL)
 	    goto theend;
 	ptr = buf1;
-	if (negative && (!visual || (visual && was_positive)))
+	if (negative && (!visual || was_positive))
 	{
 	    *ptr++ = '-';
 	}
@@ -5775,6 +5783,8 @@ do_addsub(
 theend:
     if (visual)
 	curwin->w_cursor = save_cursor;
+    else if (did_change)
+	curwin->w_set_curswant = TRUE;
 
     return did_change;
 }
@@ -6381,7 +6391,7 @@ getreg_wrap_one_line(char_u *s, int flags)
 	{
 	    if (list_append_string(list, NULL, -1) == FAIL)
 	    {
-		list_free(list, TRUE);
+		list_free(list);
 		return NULL;
 	    }
 	    list->lv_first->li_tv.vval.v_string = s;
@@ -6455,7 +6465,7 @@ get_reg_contents(int regname, int flags)
 		error = TRUE;
 	if (error)
 	{
-	    list_free(list, TRUE);
+	    list_free(list);
 	    return NULL;
 	}
 	return (char_u *)list;

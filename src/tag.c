@@ -200,6 +200,14 @@ do_tag(
     {
 	use_tagstack = FALSE;
 	new_tag = TRUE;
+#if defined(FEAT_WINDOWS) && defined(FEAT_QUICKFIX)
+	if (g_do_tagpreview != 0)
+	{
+	    vim_free(ptag_entry.tagname);
+	    if ((ptag_entry.tagname = vim_strsave(tag)) == NULL)
+		goto end_do_tag;
+	}
+#endif
     }
     else
     {
@@ -792,7 +800,7 @@ do_tag(
 		    vim_free(cmd);
 		    vim_free(fname);
 		    if (list != NULL)
-			list_free(list, TRUE);
+			list_free(list);
 		    goto end_do_tag;
 		}
 
@@ -919,7 +927,7 @@ do_tag(
 		vim_snprintf((char *)IObuff, IOSIZE, "ltag %s", tag);
 		set_errorlist(curwin, list, ' ', IObuff);
 
-		list_free(list, TRUE);
+		list_free(list);
 		vim_free(fname);
 		vim_free(cmd);
 
@@ -2638,7 +2646,7 @@ get_tagfname(
 #else
 		    "doc/tags"
 #endif
-					      , TRUE, found_tagfile_cb, NULL);
+					   , DIP_ALL, found_tagfile_cb, NULL);
 	}
 
 	if (tnp->tn_hf_idx >= tag_fnames.ga_len)

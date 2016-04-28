@@ -63,8 +63,8 @@ static int  nb_do_cmd(int, char_u *, int, int, char_u *);
 static void nb_send(char *buf, char *fun);
 static void nb_free(void);
 
-#define NETBEANS_OPEN (nb_channel_idx >= 0 && channel_is_open(nb_channel_idx))
-static int nb_channel_idx = -1;
+#define NETBEANS_OPEN (channel_can_write_to(nb_channel))
+static channel_T *nb_channel = NULL;
 
 static int r_cmdno;			/* current command number for reply */
 static int dosetvisible = FALSE;
@@ -85,7 +85,7 @@ static int inAtomic = 0;
     static void
 nb_channel_closed(void)
 {
-    nb_channel_idx = -1;
+    nb_channel = NULL;
 }
 
 /*
@@ -98,10 +98,13 @@ netbeans_close(void)
     if (NETBEANS_OPEN)
     {
 	netbeans_send_disconnect();
-	if (nb_channel_idx >= 0)
+	if (nb_channel != NULL)
+	{
 	    /* Close the socket and remove the input handlers. */
-	    channel_close(nb_channel_idx);
-	nb_channel_idx = -1;
+	    channel_close(nb_channel, TRUE);
+	    channel_clear(nb_channel);
+	}
+	nb_channel = NULL;
     }
 
 #ifdef FEAT_BEVAL
@@ -213,8 +216,8 @@ netbeans_connect(char *params, int doabort)
     if (hostname != NULL && address != NULL && password != NULL)
     {
 	port = atoi(address);
-	nb_channel_idx = channel_open(hostname, port, nb_channel_closed);
-	if (nb_channel_idx >= 0)
+	nb_channel = channel_open(hostname, port, 3000, nb_channel_closed);
+	if (nb_channel != NULL)
 	{
 	    /* success */
 # ifdef FEAT_BEVAL
@@ -230,7 +233,7 @@ netbeans_connect(char *params, int doabort)
 	}
     }
 
-    if (nb_channel_idx < 0 && doabort)
+    if (nb_channel == NULL && doabort)
 	getout(1);
 
     vim_free(hostname);
@@ -383,9 +386,9 @@ netbeans_parse_messages(void)
     char_u	*p;
     int		own_node;
 
-    while (nb_channel_idx >= 0)
+    while (nb_channel != NULL)
     {
-	buffer = channel_peek(nb_channel_idx);
+	buffer = channel_peek(nb_channel, PART_SOCK);
 	if (buffer == NULL)
 	    break;	/* nothing to read */
 
@@ -396,7 +399,7 @@ netbeans_parse_messages(void)
 	    /* Command isn't complete.  If there is no following buffer,
 	     * return (wait for more). If there is another buffer following,
 	     * prepend the text to that buffer and delete this one.  */
-	    if (channel_collapse(nb_channel_idx) == FAIL)
+	    if (channel_collapse(nb_channel, PART_SOCK) == FAIL)
 		return;
 	}
 	else
@@ -409,7 +412,7 @@ netbeans_parse_messages(void)
 	    if (*p == NUL)
 	    {
 		own_node = TRUE;
-		channel_get(nb_channel_idx);
+		channel_get(nb_channel, PART_SOCK);
 	    }
 	    else
 		own_node = FALSE;
@@ -461,7 +464,7 @@ nb_parse_cmd(char_u *cmd)
 	/* NOTREACHED */
     }
 
-    if (STRCMP(cmd, "\"DETACH\"") == 0)
+    if (STRCMP(cmd, "DETACH") == 0)
     {
 	buf_T	*buf;
 
@@ -600,8 +603,8 @@ nb_free(void)
     }
 
     /* free the queued netbeans commands */
-    if (nb_channel_idx >= 0)
-	channel_clear(nb_channel_idx);
+    if (nb_channel != NULL)
+	channel_clear(nb_channel);
 }
 
 /*
@@ -756,8 +759,8 @@ netbeans_end(void)
     static void
 nb_send(char *buf, char *fun)
 {
-    if (nb_channel_idx >= 0)
-	channel_send(nb_channel_idx, (char_u *)buf, fun);
+    if (nb_channel != NULL)
+	channel_send(nb_channel, PART_SOCK, (char_u *)buf, fun);
 }
 
 /*
@@ -1432,7 +1435,7 @@ nb_do_cmd(
 		if (buf_was_empty)
 		{
 		    if (ff_detected == EOL_UNKNOWN)
-#if defined(MSDOS) || defined(MSWIN)
+#if defined(MSWIN)
 			ff_detected = EOL_DOS;
 #else
 			ff_detected = EOL_UNIX;
@@ -3055,17 +3058,56 @@ netbeans_draw_multisign_indicator(int row)
     int i;
     int y;
     int x;
+#if GTK_CHECK_VERSION(3,0,0)
+    cairo_t *cr = NULL;
+#else
     GdkDrawable *drawable = gui.drawarea->window;
+#endif
 
     if (!NETBEANS_OPEN)
 	return;
+
+#if GTK_CHECK_VERSION(3,0,0)
+    cr = cairo_create(gui.surface);
+    {
+	GdkVisual *visual = NULL;
+	guint32 r_mask, g_mask, b_mask;
+	gint r_shift, g_shift, b_shift;
+
+	visual = gdk_window_get_visual(gtk_widget_get_window(gui.drawarea));
+	if (visual != NULL)
+	{
+	    gdk_visual_get_red_pixel_details(visual, &r_mask, &r_shift, NULL);
+	    gdk_visual_get_green_pixel_details(visual, &g_mask, &g_shift, NULL);
+	    gdk_visual_get_blue_pixel_details(visual, &b_mask, &b_shift, NULL);
+
+	    cairo_set_source_rgb(cr,
+		    ((gui.fgcolor->red & r_mask) >> r_shift) / 255.0,
+		    ((gui.fgcolor->green & g_mask) >> g_shift) / 255.0,
+		    ((gui.fgcolor->blue & b_mask) >> b_shift) / 255.0);
+	}
+    }
+#endif
 
     x = 0;
     y = row * gui.char_height + 2;
 
     for (i = 0; i < gui.char_height - 3; i++)
+#if GTK_CHECK_VERSION(3,0,0)
+	cairo_rectangle(cr, x+2, y++, 1, 1);
+#else
 	gdk_draw_point(drawable, gui.text_gc, x+2, y++);
+#endif
 
+#if GTK_CHECK_VERSION(3,0,0)
+    cairo_rectangle(cr, x+0, y, 1, 1);
+    cairo_rectangle(cr, x+2, y, 1, 1);
+    cairo_rectangle(cr, x+4, y++, 1, 1);
+    cairo_rectangle(cr, x+1, y, 1, 1);
+    cairo_rectangle(cr, x+2, y, 1, 1);
+    cairo_rectangle(cr, x+3, y++, 1, 1);
+    cairo_rectangle(cr, x+2, y, 1, 1);
+#else
     gdk_draw_point(drawable, gui.text_gc, x+0, y);
     gdk_draw_point(drawable, gui.text_gc, x+2, y);
     gdk_draw_point(drawable, gui.text_gc, x+4, y++);
@@ -3073,6 +3115,11 @@ netbeans_draw_multisign_indicator(int row)
     gdk_draw_point(drawable, gui.text_gc, x+2, y);
     gdk_draw_point(drawable, gui.text_gc, x+3, y++);
     gdk_draw_point(drawable, gui.text_gc, x+2, y);
+#endif
+
+#if GTK_CHECK_VERSION(3,0,0)
+    cairo_destroy(cr);
+#endif
 }
 #endif /* FEAT_GUI_GTK */
 

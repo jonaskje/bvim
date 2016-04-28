@@ -163,9 +163,6 @@ static void	nv_halfpage(cmdarg_T *cap);
 static void	nv_join(cmdarg_T *cap);
 static void	nv_put(cmdarg_T *cap);
 static void	nv_open(cmdarg_T *cap);
-#ifdef FEAT_SNIFF
-static void	nv_sniff(cmdarg_T *cap);
-#endif
 #ifdef FEAT_NETBEANS_INTG
 static void	nv_nbcmd(cmdarg_T *cap);
 #endif
@@ -420,9 +417,6 @@ static const struct nv_cmd
     {K_F8,	farsi_fkey,	0,			0},
     {K_F9,	farsi_fkey,	0,			0},
 #endif
-#ifdef FEAT_SNIFF
-    {K_SNIFF,	nv_sniff,	0,			0},
-#endif
 #ifdef FEAT_NETBEANS_INTG
     {K_F21,	nv_nbcmd,	NV_NCH_ALW,		0},
 #endif
@@ -569,10 +563,6 @@ normal_cmd(
      * "3d" we return from normal_cmd() and come back here, the "3" is
      * remembered in "opcount". */
     ca.opcount = opcount;
-
-#ifdef FEAT_SNIFF
-    want_sniff_request = sniff_connected;
-#endif
 
     /*
      * If there is an operator pending, then the command we take this time
@@ -2316,8 +2306,6 @@ do_mouse(
     int		in_status_line;	/* mouse in status line */
 #ifdef FEAT_WINDOWS
     static int	in_tab_line = FALSE; /* mouse clicked in tab line */
-#endif
-#ifdef FEAT_VERTSPLIT
     int		in_sep_line;	/* mouse in vertical separator line */
 #endif
     int		c1, c2;
@@ -2394,13 +2382,11 @@ do_mouse(
 	drag_status_line = FALSE;
 	update_mouseshape(SHAPE_IDX_STATUS);
     }
-# ifdef FEAT_VERTSPLIT
     if (!is_drag && drag_sep_line)
     {
 	drag_sep_line = FALSE;
 	update_mouseshape(SHAPE_IDX_VSEP);
     }
-# endif
 #endif
 
     /*
@@ -2794,7 +2780,7 @@ do_mouse(
 			oap == NULL ? NULL : &(oap->inclusive), which_button);
     moved = (jump_flags & CURSOR_MOVED);
     in_status_line = (jump_flags & IN_STATUS_LINE);
-#ifdef FEAT_VERTSPLIT
+#ifdef FEAT_WINDOWS
     in_sep_line = (jump_flags & IN_SEP_LINE);
 #endif
 
@@ -3032,7 +3018,7 @@ do_mouse(
 	}
 #endif
     }
-#ifdef FEAT_VERTSPLIT
+#ifdef FEAT_WINDOWS
     else if (in_sep_line)
     {
 # ifdef FEAT_MOUSESHAPE
@@ -4242,7 +4228,8 @@ nv_gd(
     char_u	*ptr;
 
     if ((len = find_ident_under_cursor(&ptr, FIND_IDENT)) == 0
-	    || find_decl(ptr, len, nchar == 'd', thisblock, 0) == FAIL)
+	    || find_decl(ptr, len, nchar == 'd', thisblock, SEARCH_START)
+								      == FAIL)
 	clearopbeep(oap);
 #ifdef FEAT_FOLDING
     else if ((fdo_flags & FDO_SEARCH) && KeyTyped && oap->op_type == OP_NOP)
@@ -4411,10 +4398,10 @@ nv_screengo(oparg_T *oap, int dir, long dist)
     if (width2 == 0)
 	width2 = 1; /* avoid divide by zero */
 
-#ifdef FEAT_VERTSPLIT
+#ifdef FEAT_WINDOWS
     if (curwin->w_width != 0)
-    {
 #endif
+    {
       /*
        * Instead of sticking at the last character of the buffer line we
        * try to stick in the last column of the screen.
@@ -4501,9 +4488,7 @@ nv_screengo(oparg_T *oap, int dir, long dist)
 	    }
 	}
       }
-#ifdef FEAT_VERTSPLIT
     }
-#endif
 
     if (virtual_active() && atend)
 	coladvance(MAXCOL);
@@ -7997,7 +7982,7 @@ nv_g_cmd(cmdarg_T *cap)
 	oap->motion_type = MCHAR;
 	oap->inclusive = FALSE;
 	if (curwin->w_p_wrap
-#ifdef FEAT_VERTSPLIT
+#ifdef FEAT_WINDOWS
 		&& curwin->w_width != 0
 #endif
 		)
@@ -8064,7 +8049,7 @@ nv_g_cmd(cmdarg_T *cap)
 	    oap->motion_type = MCHAR;
 	    oap->inclusive = TRUE;
 	    if (curwin->w_p_wrap
-#ifdef FEAT_VERTSPLIT
+#ifdef FEAT_WINDOWS
 		    && curwin->w_width != 0
 #endif
 	       )
@@ -9223,13 +9208,20 @@ nv_join(cmdarg_T *cap)
 	    cap->count0 = 2;	    /* default for join is two lines! */
 	if (curwin->w_cursor.lnum + cap->count0 - 1 >
 						   curbuf->b_ml.ml_line_count)
-	    clearopbeep(cap->oap);  /* beyond last line */
-	else
 	{
-	    prep_redo(cap->oap->regname, cap->count0,
-			 NUL, cap->cmdchar, NUL, NUL, cap->nchar);
-	    (void)do_join(cap->count0, cap->nchar == NUL, TRUE, TRUE, TRUE);
+	    /* can't join when on the last line */
+	    if (cap->count0 <= 2)
+	    {
+		clearopbeep(cap->oap);
+		return;
+	    }
+	    cap->count0 = curbuf->b_ml.ml_line_count
+						  - curwin->w_cursor.lnum + 1;
 	}
+
+	prep_redo(cap->oap->regname, cap->count0,
+				     NUL, cap->cmdchar, NUL, NUL, cap->nchar);
+	(void)do_join(cap->count0, cap->nchar == NUL, TRUE, TRUE, TRUE);
     }
 }
 
@@ -9387,14 +9379,6 @@ nv_open(cmdarg_T *cap)
     else
 	n_opencmd(cap);
 }
-
-#ifdef FEAT_SNIFF
-    static void
-nv_sniff(cmdarg_T *cap UNUSED)
-{
-    ProcessSniffRequests();
-}
-#endif
 
 #ifdef FEAT_NETBEANS_INTG
     static void

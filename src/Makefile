@@ -130,6 +130,7 @@
 #		make installlinks	only installs the Vim binary links
 #		make installmanlinks	only installs the Vim manpage links
 #		make installmacros	only installs the Vim macros
+#		make installpack	only installs the packages
 #		make installtutorbin	only installs the Vim tutor program
 #		make installtutor	only installs the Vim tutor files
 #		make installspell	only installs the spell files
@@ -424,7 +425,7 @@ CClink = $(CC)
 # NOTE: This may cause threading to be enabled, which has side effects (such
 # as using different libraries and debugging becomes more difficult).
 # NOTE: Using this together with Perl may cause a crash in initialization.
-# For Python3 support make a symbolic link in /usr/local/bin: 
+# For Python3 support make a symbolic link in /usr/local/bin:
 #	ln -s python3 python3.1
 # If both python2.x and python3.x are enabled then the linking will be via
 # dlopen(), dlsym(), dlclose(), i.e. pythonX.Y.so must be available
@@ -465,9 +466,6 @@ CClink = $(CC)
 # CHANNEL - inter process communication. Same conditions as NetBeans.
 # Uncomment this when you do not want inter process communication.
 #CONF_OPT_CHANNEL = --disable-channel
-
-# SNIFF - Include support for SNiFF+.
-#CONF_OPT_SNIFF = --enable-sniff
 
 # MULTIBYTE - To edit multi-byte characters.
 # Uncomment this when you want to edit a multibyte language.
@@ -908,7 +906,7 @@ SANITIZER_LIBS = $(SANITIZER_CFLAGS)
 ### after changing this, you need to do "make reconfig".
 #CONF_TERM_LIB = --with-tlib=ncurses
 
-### For GCC on MSDOS, the ".exe" suffix will be added.
+### For GCC on MS-Windows, the ".exe" suffix will be added.
 #EXEEXT = .exe
 #LNKEXT = .exe
 
@@ -1011,6 +1009,7 @@ LANGSUBDIR = /lang
 COMPSUBDIR = /compiler
 KMAPSUBDIR = /keymap
 MACROSUBDIR = /macros
+PACKSUBDIR = /pack
 TOOLSSUBDIR = /tools
 TUTORSUBDIR = /tutor
 SPELLSUBDIR = /spell
@@ -1032,6 +1031,7 @@ PODIR = po
 ### COMPSUBLOC	location for compiler files
 ### KMAPSUBLOC	location for keymap files
 ### MACROSUBLOC	location for macro files
+### PACKSUBLOC	location for packages
 ### TOOLSSUBLOC	location for tools files
 ### TUTORSUBLOC	location for tutor files
 ### SPELLSUBLOC	location for spell files
@@ -1053,6 +1053,7 @@ LANGSUBLOC	= $(VIMRTLOC)$(LANGSUBDIR)
 COMPSUBLOC	= $(VIMRTLOC)$(COMPSUBDIR)
 KMAPSUBLOC	= $(VIMRTLOC)$(KMAPSUBDIR)
 MACROSUBLOC	= $(VIMRTLOC)$(MACROSUBDIR)
+PACKSUBLOC	= $(VIMRTLOC)$(PACKSUBDIR)
 TOOLSSUBLOC	= $(VIMRTLOC)$(TOOLSSUBDIR)
 TUTORSUBLOC	= $(VIMRTLOC)$(TUTORSUBDIR)
 SPELLSUBLOC	= $(VIMRTLOC)$(SPELLSUBDIR)
@@ -1074,6 +1075,9 @@ SYS_DELMENU_FILE = $(DESTDIR)$(SCRIPTLOC)/delmenu.vim
 
 ### Name of the bugreport file target.
 SYS_BUGR_FILE	= $(DESTDIR)$(SCRIPTLOC)/bugreport.vim
+
+### Name of the rgb.txt file target.
+SYS_RGB_FILE   = $(DESTDIR)$(SCRIPTLOC)/rgb.txt
 
 ### Name of the file type detection file target.
 SYS_FILETYPE_FILE = $(DESTDIR)$(SCRIPTLOC)/filetype.vim
@@ -1157,6 +1161,9 @@ FTPLUGSOURCE = ../runtime/ftplugin
 
 # Where to copy the macro files from
 MACROSOURCE = ../runtime/macros
+
+# Where to copy the package files from
+PACKSOURCE = ../runtime/pack
 
 # Where to copy the tools files from
 TOOLSSOURCE = ../runtime/tools
@@ -1336,7 +1343,7 @@ CARBONGUI_TESTARG = VIMPROG=../$(APPDIR)/Contents/MacOS/$(VIMTARGET)
 
 # All GUI files
 ALL_GUI_SRC  = gui.c gui_gtk.c gui_gtk_f.c gui_motif.c gui_xmdlg.c gui_xmebw.c gui_athena.c gui_gtk_x11.c gui_x11.c gui_at_sb.c gui_at_fs.c pty.c
-ALL_GUI_PRO  = gui.pro gui_gtk.pro gui_motif.pro gui_xmdlg.pro gui_athena.pro gui_gtk_x11.pro gui_x11.pro gui_w16.pro gui_w32.pro gui_photon.pro
+ALL_GUI_PRO  = gui.pro gui_gtk.pro gui_motif.pro gui_xmdlg.pro gui_athena.pro gui_gtk_x11.pro gui_x11.pro gui_w32.pro gui_photon.pro
 
 # }}}
 
@@ -1391,7 +1398,7 @@ OSDEF_CFLAGS = $(PRE_DEFS) $(POST_DEFS)
 
 LINT_CFLAGS = -DLINT -I. $(PRE_DEFS) $(POST_DEFS) $(RUBY_CFLAGS) $(LUA_CFLAGS) $(PERL_CFLAGS) $(PYTHON_CFLAGS) $(PYTHON3_CFLAGS) $(TCL_CFLAGS) -Dinline= -D__extension__= -Dalloca=alloca
 
-LINT_EXTRA = -DUSE_SNIFF -DHANGUL_INPUT -D"__attribute__(x)="
+LINT_EXTRA = -DHANGUL_INPUT -D"__attribute__(x)="
 
 DEPEND_CFLAGS = -DPROTO -DDEPEND -DFEAT_GUI $(LINT_CFLAGS)
 
@@ -1433,6 +1440,7 @@ DEST_LANG = $(DESTDIR)$(LANGSUBLOC)
 DEST_COMP = $(DESTDIR)$(COMPSUBLOC)
 DEST_KMAP = $(DESTDIR)$(KMAPSUBLOC)
 DEST_MACRO = $(DESTDIR)$(MACROSUBLOC)
+DEST_PACK = $(DESTDIR)$(PACKSUBLOC)
 DEST_TOOLS = $(DESTDIR)$(TOOLSSUBLOC)
 DEST_TUTOR = $(DESTDIR)$(TUTORSUBLOC)
 DEST_SPELL = $(DESTDIR)$(SPELLSUBLOC)
@@ -1532,24 +1540,25 @@ SRC =	$(BASIC_SRC) \
 	$(PYTHON_SRC) $(PYTHON3_SRC) \
 	$(TCL_SRC) \
 	$(RUBY_SRC) \
-	$(SNIFF_SRC) \
 	$(WORKSHOP_SRC) \
 	$(WSDEBUG_SRC)
 
 TAGS_SRC = *.c *.cpp if_perl.xs
 
 EXTRA_SRC = hangulin.c if_lua.c if_mzsch.c auto/if_perl.c if_perlsfio.c \
-	    if_python.c if_python3.c if_tcl.c if_ruby.c if_sniff.c \
+	    if_python.c if_python3.c if_tcl.c if_ruby.c \
 	    gui_beval.c workshop.c wsdebug.c integration.c \
 	    netbeans.c channel.c \
 	    $(GRESOURCE_SRC)
 
 # Unittest files
+JSON_TEST_SRC = json_test.c
+JSON_TEST_TARGET = json_test$(EXEEXT)
 MEMFILE_TEST_SRC = memfile_test.c
 MEMFILE_TEST_TARGET = memfile_test$(EXEEXT)
 
-UNITTEST_SRC = $(MEMFILE_TEST_SRC)
-UNITTEST_TARGETS = $(MEMFILE_TEST_TARGET)
+UNITTEST_SRC = $(JSON_TEST_SRC) $(MEMFILE_TEST_SRC)
+UNITTEST_TARGETS = $(JSON_TEST_TARGET) $(MEMFILE_TEST_TARGET)
 
 # All sources, also the ones that are not configured
 ALL_SRC = $(BASIC_SRC) $(ALL_GUI_SRC) $(UNITTEST_SRC) $(EXTRA_SRC)
@@ -1559,7 +1568,7 @@ ALL_SRC = $(BASIC_SRC) $(ALL_GUI_SRC) $(UNITTEST_SRC) $(EXTRA_SRC)
 # The perl sources also don't work well with lint.
 LINT_SRC = $(BASIC_SRC) $(GUI_SRC) $(HANGULIN_SRC) \
 	   $(PYTHON_SRC) $(PYTHON3_SRC) $(TCL_SRC) \
-	   $(SNIFF_SRC) $(WORKSHOP_SRC) $(WSDEBUG_SRC) \
+	   $(WORKSHOP_SRC) $(WSDEBUG_SRC) \
 	   $(NETBEANS_SRC) $(CHANNEL_SRC)
 #LINT_SRC = $(SRC)
 #LINT_SRC = $(ALL_SRC)
@@ -1588,9 +1597,8 @@ OBJ_COMMON = \
 	$(HANGULIN_OBJ) \
 	objects/if_cscope.o \
 	objects/if_xcmdsrv.o \
-	objects/json.o \
 	objects/mark.o \
-        objects/memline.o \
+	objects/memline.o \
 	objects/menu.o \
 	objects/message.o \
 	objects/misc1.o \
@@ -1610,7 +1618,6 @@ OBJ_COMMON = \
 	objects/sha256.o \
 	objects/spell.o \
 	objects/syntax.o \
-	$(SNIFF_OBJ) \
 	objects/tag.o \
 	objects/term.o \
 	objects/ui.o \
@@ -1632,11 +1639,17 @@ OBJ_COMMON = \
 	$(WSDEBUG_OBJ)
 
 OBJ = $(OBJ_COMMON) \
+	objects/json.o \
 	objects/main.o \
 	objects/memfile.o
 
+JSON_TEST_OBJ = $(OBJ_COMMON) \
+	objects/json_test.o \
+	objects/memfile.o
+
 MEMFILE_TEST_OBJ = $(OBJ_COMMON) \
-        objects/memfile_test.o
+	objects/json.o \
+	objects/memfile_test.o
 
 PRO_AUTO = \
 	blowfish.pro \
@@ -1708,7 +1721,7 @@ PRO_AUTO = \
 # Resources used for the Mac are in one directory.
 RSRC_DIR = os_mac_rsrc
 
-PRO_MANUAL = os_amiga.pro os_msdos.pro os_win16.pro os_win32.pro \
+PRO_MANUAL = os_amiga.pro os_win32.pro \
 	os_mswin.pro winclip.pro os_beos.pro os_vms.pro $(PERL_PRO)
 
 # Default target is making the executable and tools
@@ -1743,7 +1756,7 @@ config auto/config.mk: auto/configure config.mk.in config.h.in
 		$(CONF_OPT_TCL) $(CONF_OPT_RUBY) $(CONF_OPT_NLS) \
 		$(CONF_OPT_CSCOPE) $(CONF_OPT_MULTIBYTE) $(CONF_OPT_INPUT) \
 		$(CONF_OPT_OUTPUT) $(CONF_OPT_GPM) $(CONF_OPT_WORKSHOP) \
-		$(CONF_OPT_SNIFF) $(CONF_OPT_FEAT) $(CONF_TERM_LIB) \
+		$(CONF_OPT_FEAT) $(CONF_TERM_LIB) \
 		$(CONF_OPT_COMPBY) $(CONF_OPT_ACL) $(CONF_OPT_NETBEANS) \
 		$(CONF_OPT_CHANNEL) \
 		$(CONF_ARGS) $(CONF_OPT_MZSCHEME) $(CONF_OPT_PLTHOME) \
@@ -1829,7 +1842,7 @@ update-po:
 # Generate function prototypes.  This is not needed to compile vim, but if
 # you want to use it, cproto is out there on the net somewhere -- Webb
 #
-# When generating os_amiga.pro, os_msdos.pro and os_win32.pro there will be a
+# When generating os_amiga.pro and os_win32.pro there will be a
 # few include files that can not be found, that's OK.
 
 proto: $(PRO_AUTO) $(PRO_MANUAL)
@@ -1857,24 +1870,16 @@ os_amiga.pro: os_amiga.c
 	$(CPROTO) -DAMIGA -UHAVE_CONFIG_H -DBPTR=char* $< > proto/$@
 	echo "/* vim: set ft=c : */" >> proto/$@
 
-os_msdos.pro: os_msdos.c
-	$(CPROTO) -DMSDOS -UHAVE_CONFIG_H $< > proto/$@
-	echo "/* vim: set ft=c : */" >> proto/$@
-
-os_win16.pro: os_win16.c
-	$(CPROTO) -DWIN16 -UHAVE_CONFIG_H $< > proto/$@
-	echo "/* vim: set ft=c : */" >> proto/$@
-
 os_win32.pro: os_win32.c
 	$(CPROTO) -DWIN32 -UHAVE_CONFIG_H $< > proto/$@
 	echo "/* vim: set ft=c : */" >> proto/$@
 
 os_mswin.pro: os_mswin.c
-	$(CPROTO) -DWIN16 -DWIN32 -UHAVE_CONFIG_H $< > proto/$@
+	$(CPROTO) -DWIN32 -UHAVE_CONFIG_H $< > proto/$@
 	echo "/* vim: set ft=c : */" >> proto/$@
 
 winclip.pro: winclip.c
-	$(CPROTO) -DWIN16 -DWIN32 -UHAVE_CONFIG_H $< > proto/$@
+	$(CPROTO) -DWIN32 -UHAVE_CONFIG_H $< > proto/$@
 	echo "/* vim: set ft=c : */" >> proto/$@
 
 os_beos.pro: os_beos.c
@@ -1914,6 +1919,7 @@ types.vim: $(TAGS_SRC) $(TAGS_INCL)
 	ctags --c-kinds=gstu -o- $(TAGS_SRC) $(TAGS_INCL) |\
 		awk 'BEGIN{printf("syntax keyword Type\t")}\
 			{printf("%s ", $$1)}END{print ""}' > $@
+	echo "syn keyword Constant OK FAIL TRUE FALSE MAYBE" >> $@
 
 # Execute the test scripts.  Run these after compiling Vim, before installing.
 # This doesn't depend on $(VIMTARGET), because that won't work when configure
@@ -1948,6 +1954,12 @@ unittest unittests: $(UNITTEST_TARGETS)
 		./$$t || exit 1; echo $$t passed; \
 	done
 
+run_json_test: $(JSON_TEST_TARGET)
+	./$(JSON_TEST_TARGET)
+
+run_memfile_test: $(MEMFILE_TEST_TARGET)
+	./$(MEMFILE_TEST_TARGET)
+
 # Run individual OLD style test, assuming that Vim was already compiled.
 test1 \
 	test_autocmd_option \
@@ -1968,10 +1980,8 @@ test1 \
 	test_listlbr_utf8 \
 	test_mapping \
 	test_marks \
-	test_match_conceal \
 	test_nested_function \
 	test_options \
-	test_qf_title \
 	test_ruby \
 	test_search_mbyte \
 	test_signs \
@@ -1981,7 +1991,7 @@ test1 \
 	test_wordcount \
 	test_writefile \
 	test2 test3 test4 test5 test6 test7 test8 test9 \
-	test10 test11 test12 test13 test14 test15 test16 test17 test18 test19 \
+	test11 test12 test13 test14 test15 test16 test17 test18 test19 \
 	test20 test21 test22 test23 test24 test25 test26 test27 test28 test29 \
 	test30 test31 test32 test33 test34 test35 test36 test37 test38 test39 \
 	test40 test41 test42 test43 test44 test45 test46 test47 test48 test49 \
@@ -1989,35 +1999,67 @@ test1 \
 	test60 test61 test62 test63 test64 test65 test66 test67 test68 test69 \
 	test70 test71 test72 test73 test74 test75 test76 test77 test78 test79 \
 	test80 test81 test82 test83 test84 test85 test86 test87 test88 test89 \
-	test90 test91 test92 test93 test94 test95 test96 test97 test98 test99 \
-	test100 test101 test102 test103 test104 test105 test106 test107 test108:
+	test90 test91 test92 test93 test94 test95 test97 test98 test99 \
+	test100 test101 test102 test103 test104 test107 test108:
 	cd testdir; rm -f $@.out; $(MAKE) -f Makefile $@.out VIMPROG=../$(VIMTARGET) $(GUI_TESTARG) SCRIPTSOURCE=../$(SCRIPTSOURCE)
 
 # Run individual NEW style test, assuming that Vim was already compiled.
 test_arglist \
 	test_assert \
+	test_assign \
+	test_autocmd \
 	test_backspace_opt \
 	test_cdo \
+	test_channel \
 	test_cursor_func \
 	test_delete \
+	test_ex_undo \
 	test_expand \
+	test_expand_dllpath \
+	test_expr \
+	test_expr_utf8 \
+	test_feedkeys \
+	test_file_perm \
+	test_fnamemodify \
 	test_glob2regpat \
+	test_goto \
 	test_hardcopy \
+	test_help_tagjump \
+	test_history \
 	test_increment \
+	test_join \
 	test_json \
 	test_langmap \
 	test_lispwords \
+	test_matchadd_conceal \
+	test_matchadd_conceal_utf8 \
+	test_matchstrpos \
 	test_menu \
+	test_messages \
+	test_packadd \
+	test_partial \
 	test_perl \
 	test_quickfix \
+	test_regexp_latin \
+	test_regexp_utf8 \
+	test_reltime \
 	test_searchpos \
 	test_set \
 	test_sort \
+	test_statusline \
+	test_syn_attr \
 	test_syntax \
+	test_tabline \
+	test_tagjump \
+	test_timers \
 	test_undolevels \
 	test_unlet \
 	test_viminfo \
 	test_viml \
+	test_visual \
+	test_window_id \
+	test_alot_latin \
+	test_alot_utf8 \
 	test_alot:
 	cd testdir; rm -f $@.res test.log messages; $(MAKE) -f Makefile $@.res VIMPROG=../$(VIMTARGET) $(GUI_TESTARG) SCRIPTSOURCE=../$(SCRIPTSOURCE)
 	@if test -f testdir/test.log; then \
@@ -2040,6 +2082,13 @@ testclean:
 
 # Unittests
 # It's build just like Vim to satisfy all dependencies.
+$(JSON_TEST_TARGET): auto/config.mk objects $(JSON_TEST_OBJ)
+	$(CCC) version.c -o objects/version.o
+	@LINK="$(PURIFY) $(SHRPENV) $(CClink) $(ALL_LIB_DIRS) $(LDFLAGS) \
+		-o $(JSON_TEST_TARGET) $(JSON_TEST_OBJ) $(ALL_LIBS)" \
+		MAKE="$(MAKE)" LINK_AS_NEEDED=$(LINK_AS_NEEDED) \
+		sh $(srcdir)/link.sh
+
 $(MEMFILE_TEST_TARGET): auto/config.mk objects $(MEMFILE_TEST_OBJ)
 	$(CCC) version.c -o objects/version.o
 	@LINK="$(PURIFY) $(SHRPENV) $(CClink) $(ALL_LIB_DIRS) $(LDFLAGS) \
@@ -2084,7 +2133,7 @@ INSTALLMANARGS = $(VIMLOC) $(SCRIPTLOC) $(VIMRCLOC) $(HELPSOURCE) $(MANMOD) \
 		$(VIMNAME) $(VIMDIFFNAME) $(EVIMNAME)
 
 # Install most of the runtime files
-installruntime: installrtbase installmacros installtutor installspell
+installruntime: installrtbase installmacros installpack installtutor installspell
 
 # install the help files; first adjust the contents for the final location
 installrtbase: $(HELPSOURCE)/vim.1 $(DEST_VIM) $(DEST_RT) \
@@ -2092,9 +2141,14 @@ installrtbase: $(HELPSOURCE)/vim.1 $(DEST_VIM) $(DEST_RT) \
 		$(DEST_FTP) $(DEST_AUTO) $(DEST_AUTO)/xml $(DEST_PLUG) \
 		$(DEST_TUTOR) $(DEST_SPELL) $(DEST_COMP)
 	-$(SHELL) ./installman.sh install $(DEST_MAN) "" $(INSTALLMANARGS)
-	@echo generating help tags
 # Generate the help tags with ":helptags" to handle all languages.
-	-@cd $(HELPSOURCE); $(MAKE) VIMEXE=$(DEST_BIN)/$(VIMTARGET) vimtags
+# Move the distributed tags file aside and restore it, to avoid it being
+# different from the repository.
+	cd $(HELPSOURCE); if test -z "$(CROSS_COMPILING)" -a -f tags; then \
+		mv -f tags tags.dist; fi
+	@echo generating help tags
+	-@cd $(HELPSOURCE); if test -z "$(CROSS_COMPILING)"; then \
+		$(MAKE) VIMEXE=$(DEST_BIN)/$(VIMTARGET) vimtags; fi
 	cd $(HELPSOURCE); \
 		files=`ls *.txt tags`; \
 		files="$$files `ls *.??x tags-?? 2>/dev/null || true`"; \
@@ -2103,6 +2157,7 @@ installrtbase: $(HELPSOURCE)/vim.1 $(DEST_VIM) $(DEST_RT) \
 		chmod $(HELPMOD) $$files
 	$(INSTALL_DATA)  $(HELPSOURCE)/*.pl $(DEST_HELP)
 	chmod $(SCRIPTMOD) $(DEST_HELP)/*.pl
+	cd $(HELPSOURCE); if test -f tags.dist; then mv -f tags.dist tags; fi
 # install the menu files
 	$(INSTALL_DATA) $(SCRIPTSOURCE)/menu.vim $(SYS_MENU_FILE)
 	chmod $(VIMSCRIPTMOD) $(SYS_MENU_FILE)
@@ -2115,6 +2170,9 @@ installrtbase: $(HELPSOURCE)/vim.1 $(DEST_VIM) $(DEST_RT) \
 	chmod $(VIMSCRIPTMOD) $(MSWIN_FILE)
 	$(INSTALL_DATA) $(SCRIPTSOURCE)/evim.vim $(EVIM_FILE)
 	chmod $(VIMSCRIPTMOD) $(EVIM_FILE)
+# install the rgb.txt file
+	$(INSTALL_DATA) $(SCRIPTSOURCE)/rgb.txt $(SYS_RGB_FILE)
+	chmod $(VIMSCRIPTMOD) $(SYS_RGB_FILE)
 # install the bugreport file
 	$(INSTALL_DATA) $(SCRIPTSOURCE)/bugreport.vim $(SYS_BUGR_FILE)
 	chmod $(VIMSCRIPTMOD) $(SYS_BUGR_FILE)
@@ -2178,6 +2236,11 @@ installmacros: $(DEST_VIM) $(DEST_RT) $(DEST_MACRO)
 	      if test -n "$$cvs"; then \
 		 rm -rf $$cvs; \
 	      fi
+
+installpack: $(DEST_VIM) $(DEST_RT) $(DEST_PACK)
+	$(INSTALL_DATA_R) $(PACKSOURCE)/* $(DEST_PACK)
+	chmod $(DIRMOD) `find $(DEST_PACK) -type d -print`
+	chmod $(FILEMOD) `find $(DEST_PACK) -type f -print`
 
 # install the tutor files
 installtutorbin: $(DEST_VIM)
@@ -2299,12 +2362,18 @@ install-languages: languages $(DEST_LANG) $(DEST_KMAP)
 ICON48PATH = $(DESTDIR)$(DATADIR)/icons/hicolor/48x48/apps
 ICON32PATH = $(DESTDIR)$(DATADIR)/icons/locolor/32x32/apps
 ICON16PATH = $(DESTDIR)$(DATADIR)/icons/locolor/16x16/apps
+ICONTHEMEPATH = $(DATADIR)/icons/hicolor
 DESKTOPPATH = $(DESTDIR)$(DATADIR)/applications
 KDEPATH = $(HOME)/.kde/share/icons
 install-icons:
 	if test -d $(ICON48PATH) -a -w $(ICON48PATH) \
 		-a ! -f $(ICON48PATH)/gvim.png; then \
 	   $(INSTALL_DATA) $(SCRIPTSOURCE)/vim48x48.png $(ICON48PATH)/gvim.png; \
+	   if test -z "$(DESTDIR)" -a -x "$(GTK_UPDATE_ICON_CACHE)" \
+		   -a -w $(ICONTHEMEPATH) \
+		   -a -f $(ICONTHEMEPATH)/index.theme; then \
+		$(GTK_UPDATE_ICON_CACHE) -q $(ICONTHEMEPATH); \
+	   fi \
 	fi
 	if test -d $(ICON32PATH) -a -w $(ICON32PATH) \
 		-a ! -f $(ICON32PATH)/gvim.png; then \
@@ -2318,6 +2387,9 @@ install-icons:
 	   $(INSTALL_DATA) $(SCRIPTSOURCE)/vim.desktop \
 		$(SCRIPTSOURCE)/gvim.desktop \
 		$(DESKTOPPATH); \
+	   if test -z "$(DESTDIR)" -a -x "$(UPDATE_DESKTOP_DATABASE)"; then \
+	      $(UPDATE_DESKTOP_DATABASE) -q $(DESKTOPPATH); \
+	   fi \
 	fi
 
 $(HELPSOURCE)/vim.1 $(MACROSOURCE) $(TOOLSSOURCE):
@@ -2328,8 +2400,8 @@ $(HELPSOURCE)/vim.1 $(MACROSOURCE) $(TOOLSSOURCE):
 $(DESTDIR)$(exec_prefix) $(DEST_BIN) \
 		$(DEST_VIM) $(DEST_RT) $(DEST_HELP) \
 		$(DEST_PRINT) $(DEST_COL) $(DEST_SYN) $(DEST_IND) $(DEST_FTP) \
-		$(DEST_LANG) $(DEST_KMAP) $(DEST_COMP) \
-		$(DEST_MACRO) $(DEST_TOOLS) $(DEST_TUTOR) $(DEST_SPELL) \
+		$(DEST_LANG) $(DEST_KMAP) $(DEST_COMP) $(DEST_MACRO) \
+		$(DEST_PACK) $(DEST_TOOLS) $(DEST_TUTOR) $(DEST_SPELL) \
 		$(DEST_AUTO) $(DEST_AUTO)/xml $(DEST_PLUG):
 	-$(SHELL) ./mkinstalldirs $@
 	-chmod $(DIRMOD) $@
@@ -2474,6 +2546,7 @@ uninstall_runtime:
 	-rm -f $(DEST_SYN)/*.vim $(DEST_SYN)/README.txt
 	-rm -f $(DEST_IND)/*.vim $(DEST_IND)/README.txt
 	-rm -rf $(DEST_MACRO)
+	-rm -rf $(DEST_PACK)
 	-rm -rf $(DEST_TUTOR)
 	-rm -rf $(DEST_SPELL)
 	-rm -rf $(DEST_TOOLS)
@@ -2531,6 +2604,7 @@ shadow:	runtime pixmaps
 				 ../../testdir/Make_all.mak \
 				 ../../testdir/*.in \
 				 ../../testdir/*.vim \
+				 ../../testdir/*.py \
 				 ../../testdir/python* \
 				 ../../testdir/sautest \
 				 ../../testdir/test83-tags? \
@@ -2799,9 +2873,6 @@ objects/if_python3.o: if_python3.c if_py_both.h
 objects/if_ruby.o: if_ruby.c
 	$(CCC) $(RUBY_CFLAGS) -o $@ if_ruby.c
 
-objects/if_sniff.o: if_sniff.c
-	$(CCC) -o $@ if_sniff.c
-
 objects/if_tcl.o: if_tcl.c
 	$(CCC) $(TCL_CFLAGS) -o $@ if_tcl.c
 
@@ -2810,6 +2881,9 @@ objects/integration.o: integration.c
 
 objects/json.o: json.c
 	$(CCC) -o $@ json.c
+
+objects/json_test.o: json_test.c
+	$(CCC) -o $@ json_test.c
 
 objects/main.o: main.c
 	$(CCC) -o $@ main.c
@@ -3301,6 +3375,10 @@ objects/gui_at_fs.o: gui_at_fs.c vim.h auto/config.h feature.h os_unix.h \
 objects/pty.o: pty.c vim.h auto/config.h feature.h os_unix.h auto/osdef.h ascii.h \
  keymap.h term.h macros.h option.h structs.h regexp.h gui.h gui_beval.h \
  proto/gui_beval.pro alloc.h ex_cmds.h proto.h globals.h farsi.h arabic.h
+objects/json_test.o: json_test.c main.c vim.h auto/config.h feature.h os_unix.h \
+ auto/osdef.h ascii.h keymap.h term.h macros.h option.h structs.h \
+ regexp.h gui.h gui_beval.h proto/gui_beval.pro alloc.h ex_cmds.h proto.h \
+ globals.h farsi.h arabic.h farsi.c arabic.c json.c
 objects/memfile_test.o: memfile_test.c main.c vim.h auto/config.h feature.h \
  os_unix.h auto/osdef.h ascii.h keymap.h term.h macros.h option.h \
  structs.h regexp.h gui.h gui_beval.h proto/gui_beval.pro alloc.h \
@@ -3341,10 +3419,6 @@ objects/if_ruby.o: if_ruby.c auto/config.h vim.h feature.h os_unix.h auto/osdef.
  ascii.h keymap.h term.h macros.h option.h structs.h regexp.h gui.h \
  gui_beval.h proto/gui_beval.pro alloc.h ex_cmds.h proto.h globals.h \
  farsi.h arabic.h version.h
-objects/if_sniff.o: if_sniff.c vim.h auto/config.h feature.h os_unix.h \
- auto/osdef.h ascii.h keymap.h term.h macros.h option.h structs.h \
- regexp.h gui.h gui_beval.h proto/gui_beval.pro alloc.h ex_cmds.h proto.h \
- globals.h farsi.h arabic.h os_unixx.h
 objects/gui_beval.o: gui_beval.c vim.h auto/config.h feature.h os_unix.h \
  auto/osdef.h ascii.h keymap.h term.h macros.h option.h structs.h \
  regexp.h gui.h gui_beval.h proto/gui_beval.pro alloc.h ex_cmds.h proto.h \

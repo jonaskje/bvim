@@ -111,7 +111,8 @@ static int	ExpandFromContext(expand_T *xp, char_u *, int *, char_u ***, int);
 static int	expand_showtail(expand_T *xp);
 #ifdef FEAT_CMDL_COMPL
 static int	expand_shellcmd(char_u *filepat, int *num_file, char_u ***file, int flagsarg);
-static int	ExpandRTDir(char_u *pat, int *num_file, char_u ***file, char *dirname[]);
+static int	ExpandRTDir(char_u *pat, int flags, int *num_file, char_u ***file, char *dirname[]);
+static int	ExpandPackAddDir(char_u *pat, int *num_file, char_u ***file);
 # ifdef FEAT_CMDHIST
 static char_u	*get_history_arg(expand_T *xp, int idx);
 # endif
@@ -206,9 +207,6 @@ getcmdline(
     struct cmdline_info save_ccline;
 #endif
 
-#ifdef FEAT_SNIFF
-    want_sniff_request = 0;
-#endif
 #ifdef FEAT_EVAL
     if (firstc == -1)
     {
@@ -502,11 +500,7 @@ getcmdline(
 		}
 		else
 		{
-# ifdef FEAT_VERTSPLIT
 		    win_redraw_last_status(topframe);
-# else
-		    lastwin->w_redr_status = TRUE;
-# endif
 		    redraw_statuslines();
 		}
 		KeyTyped = skt;
@@ -626,8 +620,8 @@ getcmdline(
 #endif
 		    if (vim_ispathsep(ccline.cmdbuff[j])
 #ifdef BACKSLASH_IN_FILENAME
-			    && vim_strchr(" *?[{`$%#", ccline.cmdbuff[j + 1])
-			       == NULL
+			    && vim_strchr((char_u *)" *?[{`$%#",
+				ccline.cmdbuff[j + 1]) == NULL
 #endif
 		       )
 		    {
@@ -1995,6 +1989,7 @@ getcmdline_prompt(
     char_u		*s;
     struct cmdline_info	save_ccline;
     int			msg_col_save = msg_col;
+    int			msg_silent_save = msg_silent;
 
     save_cmdline(&save_ccline);
     ccline.cmdprompt = prompt;
@@ -2004,8 +1999,10 @@ getcmdline_prompt(
     ccline.xp_arg = xp_arg;
     ccline.input_fn = (firstc == '@');
 # endif
+    msg_silent = 0;
     s = getcmdline(firstc, 1L, 0);
     restore_cmdline(&save_ccline);
+    msg_silent = msg_silent_save;
     /* Restore msg_col, the prompt from input() may have changed it.
      * But only if called recursively and the commandline is therefore being
      * restored to an old one; if not, the input() prompt stays on the screen,
@@ -4234,6 +4231,7 @@ addstar(
 		|| context == EXPAND_COMPILER
 		|| context == EXPAND_OWNSYNTAX
 		|| context == EXPAND_FILETYPE
+		|| context == EXPAND_PACKADD
 		|| (context == EXPAND_TAGS && fname[0] == '/'))
 	    retval = vim_strnsave(fname, len);
 	else
@@ -4493,7 +4491,9 @@ expand_cmdline(
 
 #ifdef FEAT_MULTI_LANG
 /*
- * Cleanup matches for help tags: remove "@en" if "en" is the only language.
+ * Cleanup matches for help tags:
+ * Remove "@ab" if the top of 'helplang' is "ab" and the language of the first
+ * tag matches it.  Otherwise remove "@en" if "en" is the only language.
  */
 static void	cleanup_help_tags(int num_file, char_u **file);
 
@@ -4502,11 +4502,28 @@ cleanup_help_tags(int num_file, char_u **file)
 {
     int		i, j;
     int		len;
+    char_u	buf[4];
+    char_u	*p = buf;
+
+    if (p_hlg[0] != NUL)
+    {
+	*p++ = '@';
+	*p++ = p_hlg[0];
+	*p++ = p_hlg[1];
+    }
+    *p = NUL;
 
     for (i = 0; i < num_file; ++i)
     {
 	len = (int)STRLEN(file[i]) - 3;
-	if (len > 0 && STRCMP(file[i] + len, "@en") == 0)
+	if (len <= 0)
+	    continue;
+	if (i == 0 && STRCMP(file[i] + len, buf) == 0)
+	{
+	    file[i][len] = NUL;
+	    break;
+	}
+	else if (STRCMP(file[i] + len, "@en") == 0)
 	{
 	    /* Sorting on priority means the same item in another language may
 	     * be anywhere.  Search all items for a match up to the "@en". */
@@ -4516,7 +4533,10 @@ cleanup_help_tags(int num_file, char_u **file)
 			&& STRNCMP(file[i], file[j], len + 1) == 0)
 		    break;
 	    if (j == num_file)
+	    {
 		file[i][len] = NUL;
+		break;
+	    }
 	}
     }
 }
@@ -4629,27 +4649,30 @@ ExpandFromContext(
     if (xp->xp_context == EXPAND_COLORS)
     {
 	char *directories[] = {"colors", NULL};
-	return ExpandRTDir(pat, num_file, file, directories);
+	return ExpandRTDir(pat, DIP_START + DIP_OPT, num_file, file,
+								directories);
     }
     if (xp->xp_context == EXPAND_COMPILER)
     {
 	char *directories[] = {"compiler", NULL};
-	return ExpandRTDir(pat, num_file, file, directories);
+	return ExpandRTDir(pat, 0, num_file, file, directories);
     }
     if (xp->xp_context == EXPAND_OWNSYNTAX)
     {
 	char *directories[] = {"syntax", NULL};
-	return ExpandRTDir(pat, num_file, file, directories);
+	return ExpandRTDir(pat, 0, num_file, file, directories);
     }
     if (xp->xp_context == EXPAND_FILETYPE)
     {
 	char *directories[] = {"syntax", "indent", "ftplugin", NULL};
-	return ExpandRTDir(pat, num_file, file, directories);
+	return ExpandRTDir(pat, 0, num_file, file, directories);
     }
 # if defined(FEAT_USR_CMDS) && defined(FEAT_EVAL)
     if (xp->xp_context == EXPAND_USER_LIST)
 	return ExpandUserList(xp, num_file, file);
 # endif
+    if (xp->xp_context == EXPAND_PACKADD)
+	return ExpandPackAddDir(pat, num_file, file);
 
     regmatch.regprog = vim_regcomp(pat, p_magic ? RE_MAGIC : 0);
     if (regmatch.regprog == NULL)
@@ -4918,7 +4941,7 @@ expand_shellcmd(
 	if (*s == ' ')
 	    ++s;	/* Skip space used for absolute path name. */
 
-#if defined(MSDOS) || defined(MSWIN)
+#if defined(MSWIN)
 	e = vim_strchr(s, ';');
 #else
 	e = vim_strchr(s, ':');
@@ -5118,13 +5141,19 @@ ExpandUserList(
 #endif
 
 /*
- * Expand color scheme, compiler or filetype names:
- * 'runtimepath'/{dirnames}/{pat}.vim
+ * Expand color scheme, compiler or filetype names.
+ * Search from 'runtimepath':
+ *   'runtimepath'/{dirnames}/{pat}.vim
+ * When "flags" has DIP_START: search also from 'start' of 'packpath':
+ *   'packpath'/pack/ * /start/ * /{dirnames}/{pat}.vim
+ * When "flags" has DIP_OPT: search also from 'opt' of 'packpath':
+ *   'packpath'/pack/ * /opt/ * /{dirnames}/{pat}.vim
  * "dirnames" is an array with one or more directory names.
  */
     static int
 ExpandRTDir(
     char_u	*pat,
+    int		flags,
     int		*num_file,
     char_u	***file,
     char	*dirnames[])
@@ -5154,6 +5183,36 @@ ExpandRTDir(
 	vim_free(s);
     }
 
+    if (flags & DIP_START) {
+	for (i = 0; dirnames[i] != NULL; ++i)
+	{
+	    s = alloc((unsigned)(STRLEN(dirnames[i]) + pat_len + 22));
+	    if (s == NULL)
+	    {
+		ga_clear_strings(&ga);
+		return FAIL;
+	    }
+	    sprintf((char *)s, "pack/*/start/*/%s/%s*.vim", dirnames[i], pat);
+	    globpath(p_pp, s, &ga, 0);
+	    vim_free(s);
+	}
+    }
+
+    if (flags & DIP_OPT) {
+	for (i = 0; dirnames[i] != NULL; ++i)
+	{
+	    s = alloc((unsigned)(STRLEN(dirnames[i]) + pat_len + 20));
+	    if (s == NULL)
+	    {
+		ga_clear_strings(&ga);
+		return FAIL;
+	    }
+	    sprintf((char *)s, "pack/*/opt/*/%s/%s*.vim", dirnames[i], pat);
+	    globpath(p_pp, s, &ga, 0);
+	    vim_free(s);
+	}
+    }
+
     for (i = 0; i < ga.ga_len; ++i)
     {
 	match = ((char_u **)ga.ga_data)[i];
@@ -5169,6 +5228,58 @@ ExpandRTDir(
 	    *e = NUL;
 	    mch_memmove(match, s, e - s + 1);
 	}
+    }
+
+    if (ga.ga_len == 0)
+	return FAIL;
+
+    /* Sort and remove duplicates which can happen when specifying multiple
+     * directories in dirnames. */
+    remove_duplicates(&ga);
+
+    *file = ga.ga_data;
+    *num_file = ga.ga_len;
+    return OK;
+}
+
+/*
+ * Expand loadplugin names:
+ * 'packpath'/pack/ * /opt/{pat}
+ */
+    static int
+ExpandPackAddDir(
+    char_u	*pat,
+    int		*num_file,
+    char_u	***file)
+{
+    char_u	*s;
+    char_u	*e;
+    char_u	*match;
+    garray_T	ga;
+    int		i;
+    int		pat_len;
+
+    *num_file = 0;
+    *file = NULL;
+    pat_len = (int)STRLEN(pat);
+    ga_init2(&ga, (int)sizeof(char *), 10);
+
+    s = alloc((unsigned)(pat_len + 26));
+    if (s == NULL)
+    {
+	ga_clear_strings(&ga);
+	return FAIL;
+    }
+    sprintf((char *)s, "pack/*/opt/%s*", pat);
+    globpath(p_pp, s, &ga, 0);
+    vim_free(s);
+
+    for (i = 0; i < ga.ga_len; ++i)
+    {
+	match = ((char_u **)ga.ga_data)[i];
+	s = gettail(match);
+	e = s + STRLEN(s);
+	mch_memmove(match, s, e - s + 1);
     }
 
     if (ga.ga_len == 0)
@@ -5217,7 +5328,7 @@ globpath(
 	copy_option_part(&path, buf, MAXPATHL, ",");
 	if (STRLEN(buf) + STRLEN(file) + 2 < MAXPATHL)
 	{
-# if defined(MSWIN) || defined(MSDOS)
+# if defined(MSWIN)
 	    /* Using the platform's path separator (\) makes vim incorrectly
 	     * treat it as an escape character, use '/' instead. */
 	    if (*buf != NUL && !after_pathsep(buf, buf + STRLEN(buf)))
@@ -5567,96 +5678,6 @@ get_history_idx(int histype)
     return history[histype][hisidx[histype]].hisnum;
 }
 
-static struct cmdline_info *get_ccline_ptr(void);
-
-/*
- * Get pointer to the command line info to use. cmdline_paste() may clear
- * ccline and put the previous value in prev_ccline.
- */
-    static struct cmdline_info *
-get_ccline_ptr(void)
-{
-    if ((State & CMDLINE) == 0)
-	return NULL;
-    if (ccline.cmdbuff != NULL)
-	return &ccline;
-    if (prev_ccline_used && prev_ccline.cmdbuff != NULL)
-	return &prev_ccline;
-    return NULL;
-}
-
-/*
- * Get the current command line in allocated memory.
- * Only works when the command line is being edited.
- * Returns NULL when something is wrong.
- */
-    char_u *
-get_cmdline_str(void)
-{
-    struct cmdline_info *p = get_ccline_ptr();
-
-    if (p == NULL)
-	return NULL;
-    return vim_strnsave(p->cmdbuff, p->cmdlen);
-}
-
-/*
- * Get the current command line position, counted in bytes.
- * Zero is the first position.
- * Only works when the command line is being edited.
- * Returns -1 when something is wrong.
- */
-    int
-get_cmdline_pos(void)
-{
-    struct cmdline_info *p = get_ccline_ptr();
-
-    if (p == NULL)
-	return -1;
-    return p->cmdpos;
-}
-
-/*
- * Set the command line byte position to "pos".  Zero is the first position.
- * Only works when the command line is being edited.
- * Returns 1 when failed, 0 when OK.
- */
-    int
-set_cmdline_pos(
-    int		pos)
-{
-    struct cmdline_info *p = get_ccline_ptr();
-
-    if (p == NULL)
-	return 1;
-
-    /* The position is not set directly but after CTRL-\ e or CTRL-R = has
-     * changed the command line. */
-    if (pos < 0)
-	new_cmdpos = 0;
-    else
-	new_cmdpos = pos;
-    return 0;
-}
-
-/*
- * Get the current command-line type.
- * Returns ':' or '/' or '?' or '@' or '>' or '-'
- * Only works when the command line is being edited.
- * Returns NUL when something is wrong.
- */
-    int
-get_cmdline_type(void)
-{
-    struct cmdline_info *p = get_ccline_ptr();
-
-    if (p == NULL)
-	return NUL;
-    if (p->cmdfirstc == NUL)
-	return (p->input_fn) ? '@' : '-';
-    return p->cmdfirstc;
-}
-
 /*
  * Calculate history index from a number:
  *   num > 0: seen as identifying number of a history entry
@@ -5730,6 +5751,7 @@ clr_history(int histype)
 	{
 	    vim_free(hisptr->hisstr);
 	    clear_hist_entry(hisptr);
+	    hisptr++;
 	}
 	hisidx[histype] = -1;	/* mark history as cleared */
 	hisnum[histype] = 0;	/* reset identifier counter */
@@ -5863,6 +5885,104 @@ remove_key_from_history(void)
 #endif
 
 #endif /* FEAT_CMDHIST */
+
+#if defined(FEAT_EVAL) || defined(FEAT_CMDWIN) || defined(PROTO)
+/*
+ * Get pointer to the command line info to use. cmdline_paste() may clear
+ * ccline and put the previous value in prev_ccline.
+ */
+    static struct cmdline_info *
+get_ccline_ptr(void)
+{
+    if ((State & CMDLINE) == 0)
+	return NULL;
+    if (ccline.cmdbuff != NULL)
+	return &ccline;
+    if (prev_ccline_used && prev_ccline.cmdbuff != NULL)
+	return &prev_ccline;
+    return NULL;
+}
+#endif
+
+#if defined(FEAT_EVAL) || defined(PROTO)
+/*
+ * Get the current command line in allocated memory.
+ * Only works when the command line is being edited.
+ * Returns NULL when something is wrong.
+ */
+    char_u *
+get_cmdline_str(void)
+{
+    struct cmdline_info *p = get_ccline_ptr();
+
+    if (p == NULL)
+	return NULL;
+    return vim_strnsave(p->cmdbuff, p->cmdlen);
+}
+
+/*
+ * Get the current command line position, counted in bytes.
+ * Zero is the first position.
+ * Only works when the command line is being edited.
+ * Returns -1 when something is wrong.
+ */
+    int
+get_cmdline_pos(void)
+{
+    struct cmdline_info *p = get_ccline_ptr();
+
+    if (p == NULL)
+	return -1;
+    return p->cmdpos;
+}
+
+/*
+ * Set the command line byte position to "pos".  Zero is the first position.
+ * Only works when the command line is being edited.
+ * Returns 1 when failed, 0 when OK.
+ */
+    int
+set_cmdline_pos(
+    int		pos)
+{
+    struct cmdline_info *p = get_ccline_ptr();
+
+    if (p == NULL)
+	return 1;
+
+    /* The position is not set directly but after CTRL-\ e or CTRL-R = has
+     * changed the command line. */
+    if (pos < 0)
+	new_cmdpos = 0;
+    else
+	new_cmdpos = pos;
+    return 0;
+}
+#endif
+
+#if defined(FEAT_EVAL) || defined(FEAT_CMDWIN) || defined(PROTO)
+/*
+ * Get the current command-line type.
+ * Returns ':' or '/' or '?' or '@' or '>' or '-'
+ * Only works when the command line is being edited.
+ * Returns NUL when something is wrong.
+ */
+    int
+get_cmdline_type(void)
+{
+    struct cmdline_info *p = get_ccline_ptr();
+
+    if (p == NULL)
+	return NUL;
+    if (p->cmdfirstc == NUL)
+	return
+# ifdef FEAT_EVAL
+	    (p->input_fn) ? '@' :
+# endif
+	    '-';
+    return p->cmdfirstc;
+}
+#endif
 
 #if defined(FEAT_QUICKFIX) || defined(FEAT_CMDHIST) || defined(PROTO)
 /*

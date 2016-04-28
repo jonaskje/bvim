@@ -10,10 +10,6 @@
 #define EXTERN
 #include "vim.h"
 
-#ifdef SPAWNO
-# include <spawno.h>		/* special MS-DOS swapping library */
-#endif
-
 #ifdef __CYGWIN__
 # ifndef WIN32
 #  include <cygwin/version.h>
@@ -54,6 +50,7 @@ typedef struct
 
     int		want_full_screen;
     int		stdout_isatty;		/* is stdout a terminal? */
+    int		not_a_term;		/* no warning for missing term? */
     char_u	*term;			/* specified terminal name */
 #ifdef FEAT_CRYPT
     int		ask_for_key;		/* -x argument */
@@ -505,8 +502,7 @@ main
 
     /*
      * mch_init() sets up the terminal (window) for use.  This must be
-     * done after resetting full_screen, otherwise it may move the cursor
-     * (MSDOS).
+     * done after resetting full_screen, otherwise it may move the cursor.
      * Note that we may use mch_exit() before mch_init()!
      */
     mch_init();
@@ -632,11 +628,14 @@ vim_main2(int argc UNUSED, char **argv UNUSED)
     if (p_lpl)
     {
 # ifdef VMS	/* Somehow VMS doesn't handle the "**". */
-	source_runtime((char_u *)"plugin/*.vim", TRUE);
+	source_runtime((char_u *)"plugin/*.vim", DIP_ALL);
 # else
-	source_runtime((char_u *)"plugin/**/*.vim", TRUE);
+	source_runtime((char_u *)"plugin/**/*.vim", DIP_ALL);
 # endif
 	TIME_MSG("loading plugins");
+
+	ex_packloadall(NULL);
+	TIME_MSG("loading packages");
     }
 #endif
 
@@ -705,10 +704,6 @@ vim_main2(int argc UNUSED, char **argv UNUSED)
 	if (!gui.in_use && params.evim_mode)
 	    mch_exit(1);
     }
-#endif
-
-#ifdef SPAWNO		/* special MSDOS swapping library */
-    init_SPAWNO("", SWAP_ANY);
 #endif
 
 #ifdef FEAT_VIMINFO
@@ -964,6 +959,9 @@ vim_main2(int argc UNUSED, char **argv UNUSED)
     no_wait_return = FALSE;
     starting = 0;
 
+    /* 'autochdir' has been postponed */
+    DO_AUTOCHDIR
+
 #ifdef FEAT_TERMRESPONSE
     /* Requesting the termresponse is postponed until here, so that a "-c q"
      * argument doesn't make it appear in the shell Vim was started from. */
@@ -974,6 +972,9 @@ vim_main2(int argc UNUSED, char **argv UNUSED)
     if (p_im)
 	need_start_insertmode = TRUE;
 
+#ifdef FEAT_EVAL
+    set_vim_var_nr(VV_VIM_DID_ENTER, 1L);
+#endif
 #ifdef FEAT_AUTOCMD
     apply_autocmds(EVENT_VIMENTER, NULL, NULL, FALSE, curbuf);
     TIME_MSG("VimEnter autocommands");
@@ -1181,7 +1182,10 @@ main_loop(
 			curwin->w_p_cole > 0
 # endif
 			)
-		 && !equalpos(last_cursormoved, curwin->w_cursor))
+# ifdef FEAT_AUTOCMD
+		 && !equalpos(last_cursormoved, curwin->w_cursor)
+# endif
+		 )
 	    {
 # ifdef FEAT_AUTOCMD
 		if (has_cursormoved())
@@ -1191,12 +1195,16 @@ main_loop(
 # ifdef FEAT_CONCEAL
 		if (curwin->w_p_cole > 0)
 		{
+#  ifdef FEAT_AUTOCMD
 		    conceal_old_cursor_line = last_cursormoved.lnum;
+#  endif
 		    conceal_new_cursor_line = curwin->w_cursor.lnum;
 		    conceal_update_lines = TRUE;
 		}
 # endif
+# ifdef FEAT_AUTOCMD
 		last_cursormoved = curwin->w_cursor;
+# endif
 	    }
 #endif
 
@@ -1353,7 +1361,7 @@ main_loop(
 }
 
 
-#if defined(USE_XSMP) || defined(FEAT_GUI_MSWIN) || defined(PROTO)
+#if defined(USE_XSMP) || defined(FEAT_GUI) || defined(PROTO)
 /*
  * Exit, but leave behind swap files for modified buffers.
  */
@@ -1375,7 +1383,9 @@ getout_preserve_modified(int exitval)
 #endif
 
 
-/* Exit properly */
+/*
+ * Exit properly.
+ */
     void
 getout(int exitval)
 {
@@ -1486,6 +1496,9 @@ getout(int exitval)
 	windgoto((int)Rows - 1, 0);
 #endif
 
+#ifdef FEAT_JOB_CHANNEL
+    job_stop_on_exit();
+#endif
 #ifdef FEAT_LUA
     lua_end();
 #endif
@@ -1518,7 +1531,7 @@ getout(int exitval)
 #endif
 #ifdef FEAT_EVAL
     if (garbage_collect_at_exit)
-	garbage_collect();
+	garbage_collect(FALSE);
 #endif
 #if defined(WIN32) && defined(FEAT_MBYTE)
     free_cmd_argsW();
@@ -1859,6 +1872,7 @@ command_line_scan(mparm_T *parmp)
 				/* "--version" give version message */
 				/* "--literal" take files literally */
 				/* "--nofork" don't fork */
+				/* "--not-a-term" don't warn for not a term */
 				/* "--noplugin[s]" skip plugins */
 				/* "--cmd <cmd>" execute cmd before vimrc */
 		if (STRICMP(argv[0] + argv_idx, "help") == 0)
@@ -1886,6 +1900,8 @@ command_line_scan(mparm_T *parmp)
 		}
 		else if (STRNICMP(argv[0] + argv_idx, "noplugin", 8) == 0)
 		    p_lpl = FALSE;
+		else if (STRNICMP(argv[0] + argv_idx, "not-a-term", 10) == 0)
+		    parmp->not_a_term = TRUE;
 		else if (STRNICMP(argv[0] + argv_idx, "cmd", 3) == 0)
 		{
 		    want_argument = TRUE;
@@ -2078,7 +2094,7 @@ command_line_scan(mparm_T *parmp)
 		break;
 
 		case 'O':	/* "-O[N]" open N vertical split windows */
-#if defined(FEAT_VERTSPLIT) && defined(FEAT_WINDOWS)
+#ifdef FEAT_WINDOWS
 		/* default is 0: open window for each file */
 		parmp->window_count = get_number_arg((char_u *)argv[0],
 								&argv_idx, 0);
@@ -2522,7 +2538,7 @@ check_tty(mparm_T *parmp)
 	    /* don't want the delay when started from the desktop */
 	    && !gui.starting
 #endif
-	    )
+	    && !parmp->not_a_term)
     {
 #ifdef NBDEBUG
 	/*
@@ -3306,6 +3322,7 @@ usage(void)
     main_msg(_("-F\t\t\tStart in Farsi mode"));
 #endif
     main_msg(_("-T <terminal>\tSet terminal type to <terminal>"));
+    main_msg(_("--not-a-term\t\tSkip warning for input/output not being a terminal"));
     main_msg(_("-u <vimrc>\t\tUse <vimrc> instead of any .vimrc"));
 #ifdef FEAT_GUI
     main_msg(_("-U <gvimrc>\t\tUse <gvimrc> instead of any .gvimrc"));
@@ -3945,7 +3962,7 @@ build_drop_cmd(
     }
     cdp = vim_strsave_escaped_ext(cwd,
 #ifdef BACKSLASH_IN_FILENAME
-		    "",  /* rem_backslash() will tell what chars to escape */
+		    (char_u *)"",  /* rem_backslash() will tell what chars to escape */
 #else
 		    PATH_ESC_CHARS,
 #endif

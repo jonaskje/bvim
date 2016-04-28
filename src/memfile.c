@@ -541,7 +541,7 @@ mf_sync(memfile_T *mfp, int flags)
 {
     int		status;
     bhdr_T	*hp;
-#if defined(SYNC_DUP_CLOSE) && !defined(MSDOS)
+#if defined(SYNC_DUP_CLOSE)
     int		fd;
 #endif
     int		got_int_save = got_int;
@@ -635,18 +635,13 @@ mf_sync(memfile_T *mfp, int flags)
 		status = FAIL;
 	}
 #endif
-#ifdef MSDOS
-	if (_dos_commit(mfp->mf_fd))
-	    status = FAIL;
-#else
-# ifdef SYNC_DUP_CLOSE
+#ifdef SYNC_DUP_CLOSE
 	/*
 	 * Win32 is a bit more work: Duplicate the file handle and close it.
 	 * This should flush the file to disk.
 	 */
 	if ((fd = dup(mfp->mf_fd)) >= 0)
 	    close(fd);
-# endif
 #endif
 #ifdef AMIGA
 # if defined(__AROS__) || defined(__amigaos4__)
@@ -1263,7 +1258,7 @@ mf_do_open(
      * fname cannot be NameBuff, because it must have been allocated.
      */
     mf_set_ffname(mfp);
-#if defined(MSDOS) || defined(MSWIN)
+#if defined(MSWIN)
     /*
      * A ":!cd e:xxx" may change the directory without us knowing, use the
      * full pathname always.  Careful: This frees fname!
@@ -1312,7 +1307,7 @@ mf_do_open(
 #ifdef HAVE_FD_CLOEXEC
 	int fdflags = fcntl(mfp->mf_fd, F_GETFD);
 	if (fdflags >= 0 && (fdflags & FD_CLOEXEC) == 0)
-	    fcntl(mfp->mf_fd, F_SETFD, fdflags | FD_CLOEXEC);
+	    (void)fcntl(mfp->mf_fd, F_SETFD, fdflags | FD_CLOEXEC);
 #endif
 #if defined(HAVE_SELINUX) || defined(HAVE_SMACK)
 	mch_copy_sec(fname, mfp->mf_fname);

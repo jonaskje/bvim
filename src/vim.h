@@ -27,8 +27,7 @@
 # endif
 #endif
 
-#if defined(MSDOS) || defined(WIN16) || defined(WIN32) || defined(_WIN64) \
-	|| defined(__EMX__)
+#if defined(WIN32) || defined(_WIN64) || defined(__EMX__)
 # include "vimio.h"
 #endif
 
@@ -126,7 +125,6 @@
     || defined(FEAT_GUI_ATHENA) \
     || defined(FEAT_GUI_MAC) \
     || defined(FEAT_GUI_W32) \
-    || defined(FEAT_GUI_W16) \
     || defined(FEAT_GUI_PHOTON)
 # define FEAT_GUI_ENABLED  /* also defined with NO_X11_INCLUDES */
 # if !defined(FEAT_GUI) && !defined(NO_X11_INCLUDES)
@@ -147,10 +145,10 @@
 # define _CRT_NONSTDC_NO_DEPRECATE
 #endif
 
-#if defined(FEAT_GUI_W32) || defined(FEAT_GUI_W16)
+#if defined(FEAT_GUI_W32)
 # define FEAT_GUI_MSWIN
 #endif
-#if defined(WIN16) || defined(WIN32) || defined(_WIN64)
+#if defined(WIN32) || defined(_WIN64)
 # define MSWIN
 #endif
 /* Practically everything is common to both Win32 and Win64 */
@@ -164,21 +162,6 @@
  */
 #ifdef WIN3264
 # define VIM_SIZEOF_INT 4
-#endif
-#ifdef MSDOS
-# ifdef DJGPP
-#  ifndef FEAT_GUI_GTK		/* avoid problems when generating prototypes */
-#   define VIM_SIZEOF_INT 4	/* 32 bit ints */
-#  endif
-#  define DOS32
-#  define FEAT_CLIPBOARD
-# else
-#  ifndef FEAT_GUI_GTK		/* avoid problems when generating prototypes */
-#   define VIM_SIZEOF_INT 2	/* 16 bit ints */
-#  endif
-#  define SMALL_MALLOC		/* 16 bit storage allocation */
-#  define DOS16
-# endif
 #endif
 
 #ifdef AMIGA
@@ -302,14 +285,6 @@
 
 #ifdef AMIGA
 # include "os_amiga.h"
-#endif
-
-#ifdef MSDOS
-# include "os_msdos.h"
-#endif
-
-#ifdef WIN16
-# include "os_win16.h"
 #endif
 
 #ifdef WIN3264
@@ -467,11 +442,11 @@ typedef unsigned long u8char_T;	    /* long should be 32 bits or more */
 #ifdef _DCC
 # include <sys/stat.h>
 #endif
-#if defined(MSDOS) || defined(MSWIN)
+#if defined(MSWIN)
 # include <sys/stat.h>
 #endif
 
-#if defined(HAVE_ERRNO_H) || defined(DJGPP) || defined(WIN16) \
+#if defined(HAVE_ERRNO_H) \
 	|| defined(WIN32) || defined(_WIN64) || defined(__EMX__)
 # include <errno.h>
 #endif
@@ -518,13 +493,11 @@ typedef unsigned long u8char_T;	    /* long should be 32 bits or more */
 #ifndef HAVE_SELECT
 # ifdef HAVE_SYS_POLL_H
 #  include <sys/poll.h>
-#  define HAVE_POLL
-# elif defined(WIN32) && !defined(FEAT_GUI_W32)
+# elif defined(WIN32)
 #  define HAVE_SELECT
 # else
 #  ifdef HAVE_POLL_H
 #   include <poll.h>
-#   define HAVE_POLL
 #  endif
 # endif
 #endif
@@ -782,6 +755,7 @@ extern char *(*dyn_libintl_textdomain)(const char *domainname);
 #define EXPAND_USER		42
 #define EXPAND_SYNTIME		43
 #define EXPAND_USER_ADDR_TYPE	44
+#define EXPAND_PACKADD		45
 
 /* Values for exmode_active (0 is no exmode) */
 #define EXMODE_NORMAL		1
@@ -834,7 +808,7 @@ extern char *(*dyn_libintl_textdomain)(const char *domainname);
 #define FINDFILE_DIR	1	/* only directories */
 #define FINDFILE_BOTH	2	/* files and directories */
 
-#ifdef FEAT_VERTSPLIT
+#ifdef FEAT_WINDOWS
 # define W_WINCOL(wp)	(wp->w_wincol)
 # define W_WIDTH(wp)	(wp->w_width)
 # define W_ENDCOL(wp)	(wp->w_wincol + wp->w_width)
@@ -872,11 +846,7 @@ extern char *(*dyn_libintl_textdomain)(const char *domainname);
 
 #ifdef FEAT_SYN_HL
 # define SST_MIN_ENTRIES 150	/* minimal size for state stack array */
-# ifdef FEAT_GUI_W16
-#  define SST_MAX_ENTRIES 500	/* (only up to 64K blocks) */
-# else
-#  define SST_MAX_ENTRIES 1000	/* maximal size for state stack array */
-# endif
+# define SST_MAX_ENTRIES 1000	/* maximal size for state stack array */
 # define SST_FIX_STATES	 7	/* size of sst_stack[]. */
 # define SST_DIST	 16	/* normal distance between entries */
 # define SST_INVALID	(synstate_T *)-1	/* invalid syn_state pointer */
@@ -1588,6 +1558,31 @@ typedef UINT32_TYPEDEF UINT32_T;
 #define MSG_PUTS_LONG(s)	    msg_puts_long_attr((char_u *)(s), 0)
 #define MSG_PUTS_LONG_ATTR(s, a)    msg_puts_long_attr((char_u *)(s), (a))
 
+#ifdef FEAT_GUI
+# ifdef FEAT_TERMTRUECOLOR
+#  define GUI_FUNCTION(f)	    (gui.in_use ? gui_##f : termtrue_##f)
+#  define USE_24BIT		    (gui.in_use || p_guicolors)
+# else
+#  define GUI_FUNCTION(f)	    gui_##f
+#  define USE_24BIT		    gui.in_use
+# endif
+#else
+# ifdef FEAT_TERMTRUECOLOR
+#  define GUI_FUNCTION(f)	    termtrue_##f
+#  define USE_24BIT		    p_guicolors
+# endif
+#endif
+#ifdef FEAT_TERMTRUECOLOR
+# define IS_CTERM		    (t_colors > 1 || p_guicolors)
+#else
+# define IS_CTERM		    (t_colors > 1)
+#endif
+#ifdef GUI_FUNCTION
+# define GUI_MCH_GET_RGB	    GUI_FUNCTION(mch_get_rgb)
+# define GUI_MCH_GET_COLOR	    GUI_FUNCTION(mch_get_color)
+# define GUI_GET_COLOR		    GUI_FUNCTION(get_color)
+#endif
+
 /* Prefer using emsg3(), because perror() may send the output to the wrong
  * destination and mess up the screen. */
 #ifdef HAVE_STRERROR
@@ -1728,6 +1723,12 @@ typedef struct timeval proftime_T;
 # endif
 #else
 typedef int proftime_T;	    /* dummy for function prototypes */
+#endif
+
+#ifdef _WIN64
+typedef __int64 sock_T;
+#else
+typedef int sock_T;
 #endif
 
 /* Include option.h before structs.h, because the number of window-local and
@@ -1891,7 +1892,9 @@ typedef int proftime_T;	    /* dummy for function prototypes */
 #define VV_TRUE		64
 #define VV_NULL		65
 #define VV_NONE		66
-#define VV_LEN		67	/* number of v: vars */
+#define VV_VIM_DID_ENTER 67
+#define VV_TESTING	68
+#define VV_LEN		69	/* number of v: vars */
 
 /* used for v_number in VAR_SPECIAL */
 #define VVAL_FALSE	0L
@@ -1919,10 +1922,6 @@ typedef int proftime_T;	    /* dummy for function prototypes */
 # ifdef FEAT_GUI_W32
 #  ifdef FEAT_OLE
 #   define WM_OLE (WM_APP+0)
-#  endif
-#  ifdef FEAT_CHANNEL
-    /* message for channel socket event */
-#   define WM_NETBEANS (WM_APP+1)
 #  endif
 # endif
 
@@ -1970,14 +1969,6 @@ typedef int VimClipboard;	/* This is required for the prototypes. */
 # define stat(a,b) (access(a,0) ? -1 : stat(a,b))
 #endif
 
-#ifdef FEAT_CHANNEL
-# ifdef WIN64
-typedef __int64 sock_T;
-# else
-typedef int sock_T;
-# endif
-#endif
-
 #include "ex_cmds.h"	    /* Ex command defines */
 #include "proto.h"	    /* function prototypes */
 
@@ -2006,10 +1997,6 @@ typedef int sock_T;
 
 
 #include "globals.h"	    /* global variables and messages */
-
-#ifdef FEAT_SNIFF
-# include "if_sniff.h"
-#endif
 
 #ifndef FEAT_VIRTUALEDIT
 # define getvvcol(w, p, s, c, e) getvcol(w, p, s, c, e)
@@ -2311,15 +2298,27 @@ typedef int sock_T;
 # define SET_NO_HLSEARCH(flag) no_hlsearch = (flag)
 #endif
 
-#ifdef FEAT_CHANNEL
+#ifdef FEAT_JOB_CHANNEL
 # define MAX_OPEN_CHANNELS 10
 #else
 # define MAX_OPEN_CHANNELS 0
 #endif
 
+/* Options for json_encode() and json_decode. */
+#define JSON_JS		1   /* use JS instead of JSON */
+#define JSON_NO_NONE	2   /* v:none item not allowed */
+
 #ifdef FEAT_MZSCHEME
 /* this is in main.c, cproto can't handle it. */
 int vim_main2(int argc, char **argv);
 #endif
+
+/* Used for flags of do_in_path() */
+#define DIP_ALL	    0x01	/* all matches, not just the first one */
+#define DIP_DIR	    0x02	/* find directories instead of files. */
+#define DIP_ERR	    0x04	/* give an error message when none found. */
+#define DIP_START   0x08	/* also use "start" directory in 'packpath' */
+#define DIP_OPT	    0x10	/* also use "opt" directory in 'packpath' */
+#define DIP_NORTP   0x20	/* do not use 'runtimepath' */
 
 #endif /* VIM__H */

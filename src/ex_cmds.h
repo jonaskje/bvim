@@ -66,6 +66,7 @@
 #define ADDR_BUFFERS		4
 #define ADDR_TABS		5
 #define ADDR_QUICKFIX		6
+#define ADDR_OTHER		99
 
 #ifndef DO_DECLARE_EXCMD
 typedef struct exarg exarg_T;
@@ -93,11 +94,7 @@ static struct cmdname
     ex_func_T   cmd_func;	/* function for this command */
     long_u	cmd_argt;	/* flags declared above */
     int		cmd_addr_type;	/* flag for address type */
-}
-# if defined(FEAT_GUI_W16)
-_far
-# endif
-cmdnames[] =
+} cmdnames[] =
 #else
 # define EX(a, b, c, d, e)  a
 enum CMD_index
@@ -920,8 +917,8 @@ EX(CMD_menutranslate,	"menutranslate", ex_menutranslate,
 			EXTRA|TRLBAR|NOTRLCOM|USECTRLV|CMDWIN,
 			ADDR_LINES),
 EX(CMD_messages,	"messages",	ex_messages,
-			TRLBAR|CMDWIN,
-			ADDR_LINES),
+			EXTRA|TRLBAR|RANGE|CMDWIN,
+			ADDR_OTHER),
 EX(CMD_mkexrc,		"mkexrc",	ex_mkrc,
 			BANG|FILE1|TRLBAR|CMDWIN,
 			ADDR_LINES),
@@ -1044,6 +1041,12 @@ EX(CMD_ownsyntax,	"ownsyntax",	ex_ownsyntax,
 			ADDR_LINES),
 EX(CMD_print,		"print",	ex_print,
 			RANGE|WHOLEFOLD|COUNT|EXFLAGS|TRLBAR|CMDWIN|SBOXOK,
+			ADDR_LINES),
+EX(CMD_packadd,		"packadd",	ex_packadd,
+			BANG|FILE1|NEEDARG|TRLBAR|SBOXOK|CMDWIN,
+			ADDR_LINES),
+EX(CMD_packloadall,	"packloadall",	ex_packloadall,
+			BANG|TRLBAR|SBOXOK|CMDWIN,
 			ADDR_LINES),
 EX(CMD_pclose,		"pclose",	ex_pclose,
 			BANG|TRLBAR,
@@ -1311,9 +1314,6 @@ EX(CMD_smenu,		"smenu",	ex_menu,
 			ADDR_LINES),
 EX(CMD_snext,		"snext",	ex_next,
 			RANGE|NOTADR|BANG|FILES|EDITCMD|ARGOPT|TRLBAR,
-			ADDR_LINES),
-EX(CMD_sniff,		"sniff",	ex_sniff,
-			EXTRA|TRLBAR,
 			ADDR_LINES),
 EX(CMD_snomagic,	"snomagic",	ex_submagic,
 			RANGE|WHOLEFOLD|EXTRA|CMDWIN,
