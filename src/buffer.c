@@ -3364,7 +3364,7 @@ maketitle(void)
 
 	    if (serverName != NULL)
 	    {
-		vim_strncpy(buf, serverName, IOSIZE);
+		vim_strncpy(buf, serverName, IOSIZE - 1);
 		vim_strcat(buf, " - ", IOSIZE);
 	    }
 #else
