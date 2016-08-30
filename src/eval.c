@@ -492,6 +492,9 @@ static void f_asin(typval_T *argvars, typval_T *rettv);
 static void f_atan(typval_T *argvars, typval_T *rettv);
 static void f_atan2(typval_T *argvars, typval_T *rettv);
 #endif
+#ifdef FEAT_BORE
+static void f_borectrlpmatch(typval_T *argvars, typval_T *rettv);
+#endif
 static void f_browse(typval_T *argvars, typval_T *rettv);
 static void f_browsedir(typval_T *argvars, typval_T *rettv);
 static void f_bufexists(typval_T *argvars, typval_T *rettv);
@@ -8348,6 +8351,9 @@ static struct fst
     {"atan",		1, 1, f_atan},
     {"atan2",		2, 2, f_atan2},
 #endif
+#ifdef FEAT_BORE
+    {"borectrlpmatch",2, 7, f_borectrlpmatch},
+#endif
     {"browse",		4, 4, f_browse},
     {"browsedir",	2, 2, f_browsedir},
     {"bufexists",	1, 1, f_bufexists},
@@ -9874,6 +9880,285 @@ f_atan2(typval_T *argvars, typval_T *rettv)
 	rettv->vval.v_float = atan2(fx, fy);
     else
 	rettv->vval.v_float = 0.0;
+}
+#endif
+
+#ifdef FEAT_BORE
+
+typedef struct bore_ctrlp_search_item_t
+{
+    char_u* str;
+    char_u* start;
+} bore_ctrlp_search_item_t;
+
+static void bore_ctrlp_mmode_filename(bore_ctrlp_search_item_t* item, int *len)
+{
+    char_u* s = strrchr(item->str, PATHSEP);
+    item->start = s ? s + 1 : item->str;
+}
+
+static void bore_ctrlp_mmode_firstnonttab(bore_ctrlp_search_item_t* item, int *len)
+{
+    char_u* first = item->str;
+    for (char_u* s = item->str; *s; ++s)
+    {
+	if (*s == '\t')
+	{
+	    first = s;
+	    break;
+	}
+    }
+    item->start = item->str;
+    *len = first - item->str;
+}
+
+static void bore_ctrlp_mmode_untillastab(bore_ctrlp_search_item_t* item, int *len)
+{
+    char_u* last = item->str;
+    for (char_u* s = item->str; *s; ++s)
+    {
+	if (*s == '\t')
+	    last = s;
+    }
+    item->start = item->str;
+    *len = last - item->str;
+}
+
+static void bore_ctrlp_mmode_fullline(bore_ctrlp_search_item_t* item, int *len)
+{
+    item->start = item->str;
+}
+
+typedef void (*bore_ctrlp_mmode_func)(bore_ctrlp_search_item_t* item, int *len);
+
+/*
+ * "borectrlpmatch()" function
+ */
+    static void
+f_borectrlpmatch(typval_T *argvars, typval_T *rettv)
+{
+    char_u strbuf[MAXPATHL];
+    char_u mmodebuf[NUMBUFLEN];
+    char_u crfilebuf[NUMBUFLEN];
+
+    // check input list
+    rettv->vval.v_number = -1;
+    if (argvars[0].v_type != VAR_LIST || argvars[0].vval.v_list == NULL)
+    {
+	EMSG(_(e_listreq));
+	return;
+    }
+
+    // check output list
+    if (rettv_list_alloc(rettv) == FAIL)
+    {
+	EMSG("list alloc fail");
+	return;
+    }
+
+    // :help g:ctrlp_match_func
+    list_T* list_items = argvars[0].vval.v_list;			// The full list of items to search in.
+    char_u* input_str = get_tv_string_buf(&argvars[1], strbuf);		// The string entered by the user.
+    const int match_limit = get_tv_number(&argvars[2]);			// The max height of the match window.
+    const char_u* mmode = get_tv_string_buf(&argvars[3], mmodebuf);	// full-line, filname-only, first-non-tab, until-last-tab
+    const int ispath = get_tv_number(&argvars[4]);			// Is 1 when searching in file, buffer, mru, mixed, dir
+    const char_u* crfile = get_tv_string_buf(&argvars[5], crfilebuf);	// The file in the current window.
+    const int regex = get_tv_number(&argvars[6]);			// In regex mode: 1 or 0.
+    const int search_item_count = list_items->lv_len;
+    int search_mode = 0;
+
+    // no search string
+    if (input_str[0] == '\0')
+    {
+	int match_count = 0;
+	listitem_T *li;
+	for (li = list_items->lv_first; li != NULL; li = li->li_next)
+	{
+	    list_append_string(rettv->vval.v_list, li->li_tv.vval.v_string, -1);
+	    if (match_limit > 0 && ++match_count >= match_limit) 
+		break;
+	}
+	return;
+    }
+
+    bore_ctrlp_search_item_t* search_items = (bore_ctrlp_search_item_t*)alloc(sizeof(bore_ctrlp_search_item_t) * search_item_count);
+    int* search_lengths = (int*)alloc(sizeof(int) * search_item_count);
+
+    if (0 == strcmp(mmode, "filename-only"))
+	search_mode = 1;
+    else if (0 == strcmp(mmode, "first-non-tab"))
+	search_mode = 2;
+    else if (0 == strcmp(mmode, "until-last-tab"))
+	search_mode = 3;
+    else if (0 == strcmp(mmode, "full-line"))
+	search_mode = 0;
+
+    const bore_ctrlp_mmode_func mmode_funcs[4] = {
+	bore_ctrlp_mmode_filename,
+	bore_ctrlp_mmode_firstnonttab,
+	bore_ctrlp_mmode_untillastab,
+	bore_ctrlp_mmode_fullline	
+    };
+    const bore_ctrlp_mmode_func mmode_func = mmode_funcs[search_mode];
+
+    // fill search items using the correct search_mode function
+    {
+	listitem_T *li;
+	int i = 0;
+	for (li = list_items->lv_first; li != NULL; li = li->li_next)
+	{
+	    search_items[i].str = li->li_tv.vval.v_string;
+	    mmode_func(search_items + i, search_lengths + i);
+	    ++i;
+	}
+    }
+
+    // regex search
+    if (regex)
+    {
+	// regex - find all matches
+	{
+	    regmatch_T regmatch;
+	    regmatch.regprog = vim_regcomp(input_str, RE_MAGIC + RE_STRING);
+	    if (regmatch.regprog == NULL)
+	    {
+		EMSG("regexp compile fail");
+		goto error;
+	    }
+	    int search_idx = 0;
+	    int match_count = 0;
+	    for (; search_idx < search_item_count; ++search_idx)
+	    {
+		char_u *search = search_items[search_idx].start;
+		int isMatch = vim_regexec(&regmatch, search, 0);
+		if (isMatch)
+		{
+		    list_append_string(rettv->vval.v_list, search_items[search_idx].str, -1);
+		    if (match_limit > 0 && ++match_count >= match_limit) 
+			break;
+		}
+	    }
+	    vim_regfree(regmatch.regprog);
+	}
+
+	// regex - syntax highlight all matches
+	{
+	    clear_matches(curwin);
+	    char_u* pattern;
+	    if (1 == search_mode)
+	    {
+		// ctrlp vimscript reference: substitute(a:input, '\$\@<!$', '\\ze[^\\/]*$', 'g')
+		pattern = do_string_sub(input_str, "\\$\\@<!$", "\\\\ze[^\\\\/]*$", "g");
+	    }
+	    else
+	    {
+		// ctrlp vimscript reference: substitute(a:input, '\\\@<!\^', '^> \\zs', 'g')
+		pattern = do_string_sub(input_str, "\\\\@<!\\^", "^> \\\\zs", "g");
+	    }
+	    // TODO-pkack concat "\\c" or "\\C" based on smartcase
+	    match_add(curwin, "CtrlPMatch", pattern, 10, -1, NULL, NULL);
+	    vim_free(pattern);
+	}
+    }
+
+    // substring search
+    else
+    {
+	int numfilters = 0;
+	char_u* filters[64];
+
+	// substring - if ignorecase, convert to lower case
+	int ignorecase = p_ic;
+	if (p_ic)
+	{
+	    if (!p_scs)
+	    {
+		char_u* s = input_str;
+		for (; *s; ++s)
+		    *s = TOLOWER_LOC(*s);
+	    }
+	    else
+	    {
+		char_u* s = input_str;
+		for (; *s && ignorecase; ++s)
+		    ignorecase = (TOLOWER_LOC(*s) == *s);
+	    }
+	}
+
+	// substring - fill all substring filters and corresponding syntax highlighting patterns
+	clear_matches(curwin);
+	{
+	    char_u buf[MAXPATHL];
+	    char_u* filter = (char_u*) strtok((char*)input_str, " ");
+	    while (filter != NULL && numfilters < 64)
+	    {
+		filters[numfilters++] = filter;
+
+		// add syntax highlighting for every filter, i.e. every substring match
+		{
+		    // TODO-pkack use temp buffer instead of allocation for escaped string
+		    char_u* pattern = vim_strsave_escaped(filter, "^$.*~\\");
+		    char_u* begin = ignorecase ? "\\c" : "\\C";
+		    strcpy(buf, begin);
+		    if (1 == search_mode) // only-filename, don't match anything in  path
+			vim_strcat(buf, "\\([^\\/\\\\]*$\\)\\@=", MAXPATHL);
+		    vim_strcat(buf, pattern, MAXPATHL);
+		    match_add(curwin, "CtrlPMatch", buf, 10, -1, NULL, NULL);
+		    vim_free(pattern);
+		}
+		filter = (char_u*) strtok(NULL, " ");
+	    }
+	}
+
+	// substring - for every search item, find match for all filters
+	char buf[MAXPATHL];
+	int search_idx = 0;
+	int match_count = 0;
+	for (; search_idx < search_item_count; ++search_idx)
+	{
+	    char_u *search;
+	    if (ignorecase)
+	    {
+		char_u* src = search_items[search_idx].start;
+		char_u* dst = buf;
+		int j = 0;
+		for (; *src && j < MAXPATHL - 1; ++src, ++dst, ++j) 
+		    *dst = TOLOWER_LOC(*src);
+		*dst = '\0';
+		search = buf;
+	    }
+	    else
+	    {
+		search = search_items[search_idx].start;
+	    }
+
+	    int f = 0;
+	    for (; f < numfilters; ++f)
+	    {
+		if (!strstr(search, filters[f]))
+		    break;
+	    }
+
+	    if (f == numfilters)
+	    {
+		// in tab substring modes (mode 2 and 3)
+		if (search_mode & 2)
+		{
+		    // add back the non-searchable part of the string with a tab character
+		    if (search_lengths[search_idx] > 0)
+			search_lengths[search_idx] = '\t';
+		}
+
+		list_append_string(rettv->vval.v_list, search_items[search_idx].str, -1);
+		if (match_limit > 0 && ++match_count >= match_limit) 
+		    break;
+	    }
+
+	}
+    }
+error:
+    free(search_items);
+    free(search_lengths);
 }
 #endif
 
