@@ -129,7 +129,10 @@ static int bore_is_excluded_file(const char* path)
     const char* ext = (char*)vim_strrchr((char_u*)path, '.');
     if (ext)
     {
-        if (0 == STRICMP((char*)ext, ".dll") || 0 == STRICMP((char*)ext, ".vcxproj") || 0 == STRICMP((char*)ext, ".exe"))
+        if (0 == STRICMP((char*)ext, ".pdb") ||
+            0 == STRICMP((char*)ext, ".dll") ||
+            0 == STRICMP((char*)ext, ".vcxproj") ||
+            0 == STRICMP((char*)ext, ".exe"))
             return 1;
     }
 
