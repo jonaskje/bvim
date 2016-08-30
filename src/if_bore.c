@@ -1398,7 +1398,7 @@ void borefind_parse_options(char* arg, bore_search_t* search)
         // _strlwr_s(what, search.what_len);
         char* c = what;
         for (; *c; ++c)
-            *c = tolower(*c);
+            *c = TOLOWER_LOC(*c);
     }
 
     search->what = what;
