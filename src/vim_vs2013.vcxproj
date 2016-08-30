@@ -92,7 +92,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
-      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;HAVE_PATHDEF;FEAT_BORE;WINVER=0x0601;_WIN32_WINNT=0x0601;DEBUG;FEAT_GUI_W32;DYNAMIC_ICONV;DYNAMIC_GETTEXT;FEAT_BIG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;_WINDOWS;HAVE_PATHDEF;FEAT_BORE;WINVER=0x0601;_WIN32_WINNT=0x0601;FEAT_GUI_W32;DYNAMIC_ICONV;DYNAMIC_GETTEXT;FEAT_BIG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>.;proto;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <WarningLevel>Level3</WarningLevel>
@@ -111,7 +111,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug_Python|Win32'">
     <ClCompile>
-      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;HAVE_PATHDEF;FEAT_BORE;WINVER=0x0601;_WIN32_WINNT=0x0601;DEBUG;FEAT_GUI_W32;DYNAMIC_ICONV;DYNAMIC_GETTEXT;FEAT_BIG;FEAT_PYTHON;DYNAMIC_PYTHON;DYNAMIC_PYTHON_DLL="python27.dll";%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;_WINDOWS;HAVE_PATHDEF;FEAT_BORE;WINVER=0x0601;_WIN32_WINNT=0x0601;FEAT_GUI_W32;DYNAMIC_ICONV;DYNAMIC_GETTEXT;FEAT_BIG;FEAT_PYTHON;DYNAMIC_PYTHON;DYNAMIC_PYTHON_DLL="python27.dll";%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>.;proto;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <WarningLevel>Level3</WarningLevel>
