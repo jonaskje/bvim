@@ -5,6 +5,7 @@
 extern "C" {
 #include "if_bore.h"
 }
+#include "macros.h"
 #include <windows.h>
 #include <winnt.h>
 
@@ -156,7 +157,6 @@ struct search_context_t
     LONG* remaining_file_count;
     bore_alloc_t filedata;
     bore_alloc_t filedata_lowercase;
-    char* lowercase_table;
     const exact_string_search_t* string_search;
     bore_search_t* search;
     bore_match_t* match;
@@ -221,7 +221,7 @@ static void search_one_file(struct search_context_t* search_context, const char*
             u8* src = search_context->filedata.base;
             u8* end = src + filesize;
             for ( ; src < end; ++src, ++dst)
-                *dst = search_context->lowercase_table[*src];
+                *dst = TOLOWER_LOC(*src);
 
             start = (char*)search_context->filedata_lowercase.base;
             size = search_context->filedata_lowercase.cursor - search_context->filedata_lowercase.base;
@@ -356,10 +356,6 @@ int bore_dofind(bore_t* b, int thread_count, int* truncated_, bore_match_t* matc
         thread_count = 32;
     }
 
-    char lowercase_table[256];
-    for (int i = 0; i < 256; i++)
-        lowercase_table[i] = tolower(i);
-
     HANDLE threads[32] = {0};
     search_context_t search_contexts[32] = {0};
     LONG match_count = 0;
@@ -369,7 +365,6 @@ int bore_dofind(bore_t* b, int thread_count, int* truncated_, bore_match_t* matc
         search_contexts[i].remaining_file_count = &file_count;
         bore_prealloc(&search_contexts[i].filedata, 100000);
         bore_prealloc(&search_contexts[i].filedata_lowercase, 100000);
-        search_contexts[i].lowercase_table = lowercase_table;
         search_contexts[i].string_search = &string_search;
         search_contexts[i].search = search;
         search_contexts[i].match = match;

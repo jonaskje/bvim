@@ -1197,7 +1197,7 @@ open_line(
 			    int	    i;
 			    int	    l;
 
-			    for (i = 0; p[i] != NUL && i < lead_len; i += l)
+			    for (i = 0; i < lead_len && p[i] != NUL; i += l)
 			    {
 				l = (*mb_ptr2len)(p + i);
 				if (vim_strnsize(p, i + l) > repl_size)
@@ -1976,7 +1976,7 @@ plines_win_nofill(
     if (!wp->w_p_wrap)
 	return 1;
 
-#ifdef FEAT_VERTSPLIT
+#ifdef FEAT_WINDOWS
     if (wp->w_width == 0)
 	return 1;
 #endif
@@ -2052,7 +2052,7 @@ plines_win_col(win_T *wp, linenr_T lnum, long column)
     if (!wp->w_p_wrap)
 	return lines + 1;
 
-#ifdef FEAT_VERTSPLIT
+#ifdef FEAT_WINDOWS
     if (wp->w_width == 0)
 	return lines + 1;
 #endif
@@ -3676,28 +3676,9 @@ vim_beep(
 		    && !(gui.in_use && gui.starting)
 #endif
 		    )
-	    {
 		out_str(T_VB);
-	    }
 	    else
-	    {
-#ifdef MSDOS
-		/*
-		 * The number of beeps outputted is reduced to avoid having to
-		 * wait for all the beeps to finish. This is only a problem on
-		 * systems where the beeps don't overlap.
-		 */
-		if (beep_count == 0 || beep_count == 10)
-		{
-		    out_char(BELL);
-		    beep_count = 1;
-		}
-		else
-		    ++beep_count;
-#else
 		out_char(BELL);
-#endif
-	    }
 	}
 
 	/* When 'verbose' is set and we are sourcing a script or executing a
@@ -3779,7 +3760,7 @@ init_homedir(void)
 	homedrive = mch_getenv((char_u *)"HOMEDRIVE");
 	homepath = mch_getenv((char_u *)"HOMEPATH");
 	if (homepath == NULL || *homepath == NUL)
-	    homepath = "\\";
+	    homepath = (char_u *)"\\";
 	if (homedrive != NULL
 			   && STRLEN(homedrive) + STRLEN(homepath) < MAXPATHL)
 	{
@@ -3811,13 +3792,13 @@ init_homedir(void)
 # endif
 #endif
 
-#if defined(MSDOS) || defined(MSWIN)
+#if defined(MSWIN)
     /*
      * Default home dir is C:/
      * Best assumption we can make in such a situation.
      */
     if (var == NULL)
-	var = "C:/";
+	var = (char_u *)"C:/";
 #endif
     if (var != NULL)
     {
@@ -3947,7 +3928,7 @@ expand_env_esc(
 		    && at_start
 #endif
 	   )
-#if defined(MSDOS) || defined(MSWIN)
+#if defined(MSWIN)
 		|| *src == '%'
 #endif
 		|| (*src == '~' && at_start))
@@ -3976,7 +3957,7 @@ expand_env_esc(
 #endif
 		{
 		    while (c-- > 0 && *tail != NUL && ((vim_isIDc(*tail))
-#if defined(MSDOS) || defined(MSWIN)
+#if defined(MSWIN)
 			    || (*src == '%' && *tail != '%')
 #endif
 			    ))
@@ -3985,7 +3966,7 @@ expand_env_esc(
 		    }
 		}
 
-#if defined(MSDOS) || defined(MSWIN) || defined(UNIX)
+#if defined(MSWIN) || defined(UNIX)
 # ifdef UNIX
 		if (src[1] == '{' && *tail != '}')
 # else
@@ -4003,7 +3984,7 @@ expand_env_esc(
 #endif
 		    *var = NUL;
 		    var = vim_getenv(dst, &mustfree);
-#if defined(MSDOS) || defined(MSWIN) || defined(UNIX)
+#if defined(MSWIN) || defined(UNIX)
 		}
 #endif
 	    }
@@ -4194,7 +4175,7 @@ vim_getenv(char_u *name, int *mustfree)
     char_u	*pend;
     int		vimruntime;
 
-#if defined(MSDOS) || defined(MSWIN)
+#if defined(MSWIN)
     /* use "C:/" when $HOME is not set */
     if (STRCMP(name, "HOME") == 0)
 	return homedir;
@@ -4932,7 +4913,7 @@ get_past_head(char_u *path)
 {
     char_u  *retval;
 
-#if defined(MSDOS) || defined(MSWIN)
+#if defined(MSWIN)
     /* may skip "c:" */
     if (isalpha(path[0]) && path[1] == ':')
 	retval = path + 2;
@@ -9734,13 +9715,13 @@ static int vim_backtick(char_u *p);
 static int expand_backtick(garray_T *gap, char_u *pat, int flags);
 # endif
 
-# if defined(MSDOS) || defined(FEAT_GUI_W16) || defined(WIN3264)
+# if defined(WIN3264)
 /*
  * File name expansion code for MS-DOS, Win16 and Win32.  It's here because
  * it's shared between these systems.
  */
-# if defined(DJGPP) || defined(PROTO)
-#  define _cdecl	    /* DJGPP doesn't have this */
+# if defined(PROTO)
+#  define _cdecl
 # else
 #  ifdef __BORLANDC__
 #   define _cdecl _RTLENTRYF
@@ -9755,24 +9736,6 @@ pstrcmp(const void *a, const void *b)
 {
     return (pathcmp(*(char **)a, *(char **)b, -1));
 }
-
-# ifndef WIN3264
-    static void
-namelowcpy(
-    char_u *d,
-    char_u *s)
-{
-#  ifdef DJGPP
-    if (USE_LONG_FNAME)	    /* don't lower case on Windows 95/NT systems */
-	while (*s)
-	    *d++ = *s++;
-    else
-#  endif
-	while (*s)
-	    *d++ = TOLOWER_LOC(*s++);
-    *d = NUL;
-}
-# endif
 
 /*
  * Recursively expand one path component into all matching files and/or
@@ -9802,16 +9765,12 @@ dos_expandpath(
     int		len;
     int		starstar = FALSE;
     static int	stardepth = 0;	    /* depth for "**" expansion */
-#ifdef WIN3264
     WIN32_FIND_DATA	fb;
     HANDLE		hFind = (HANDLE)0;
 # ifdef FEAT_MBYTE
     WIN32_FIND_DATAW    wfb;
     WCHAR		*wn = NULL;	/* UCS-2 name, NULL when not used. */
 # endif
-#else
-    struct ffblk	fb;
-#endif
     char_u		*matchname;
     int			ok;
 
@@ -9852,7 +9811,7 @@ dos_expandpath(
 	else if (path_end >= path + wildoff
 			 && vim_strchr((char_u *)"*?[~", *path_end) != NULL)
 	    e = p;
-#ifdef FEAT_MBYTE
+# ifdef FEAT_MBYTE
 	if (has_mbyte)
 	{
 	    len = (*mb_ptr2len)(path_end);
@@ -9861,7 +9820,7 @@ dos_expandpath(
 	    path_end += len;
 	}
 	else
-#endif
+# endif
 	    *p++ = *path_end++;
     }
     e = p;
@@ -9922,7 +9881,6 @@ dos_expandpath(
 
     /* Scan all files in the directory with "dir/ *.*" */
     STRCPY(s, "*.*");
-#ifdef WIN3264
 # ifdef FEAT_MBYTE
     if (enc_codepage >= 0 && (int)GetACP() != enc_codepage)
     {
@@ -9944,26 +9902,17 @@ dos_expandpath(
 
     if (wn == NULL)
 # endif
-	hFind = FindFirstFile(buf, &fb);
+	hFind = FindFirstFile((LPCSTR)buf, &fb);
     ok = (hFind != INVALID_HANDLE_VALUE);
-#else
-    /* If we are expanding wildcards we try both files and directories */
-    ok = (findfirst((char *)buf, &fb,
-		(*path_end != NUL || (flags & EW_DIR)) ? FA_DIREC : 0) == 0);
-#endif
 
     while (ok)
     {
-#ifdef WIN3264
 # ifdef FEAT_MBYTE
 	if (wn != NULL)
 	    p = utf16_to_enc(wfb.cFileName, NULL);   /* p is allocated here */
 	else
 # endif
 	    p = (char_u *)fb.cFileName;
-#else
-	p = (char_u *)fb.ff_name;
-#endif
 	/* Ignore entries starting with a dot, unless when asked for.  Accept
 	 * all entries found with "matchname". */
 	if ((p[0] != '.' || starts_with_dot
@@ -9975,11 +9924,7 @@ dos_expandpath(
 		  || ((flags & EW_NOTWILD)
 		     && fnamencmp(path + (s - buf), p, e - s) == 0)))
 	{
-#ifdef WIN3264
 	    STRCPY(s, p);
-#else
-	    namelowcpy(s, p);
-#endif
 	    len = (int)STRLEN(buf);
 
 	    if (starstar && stardepth < 100)
@@ -10011,7 +9956,6 @@ dos_expandpath(
 	    }
 	}
 
-#ifdef WIN3264
 # ifdef FEAT_MBYTE
 	if (wn != NULL)
 	{
@@ -10021,16 +9965,12 @@ dos_expandpath(
 	else
 # endif
 	    ok = FindNextFile(hFind, &fb);
-#else
-	ok = (findnext(&fb) == 0);
-#endif
 
 	/* If no more matches and no match was used, try expanding the name
 	 * itself.  Finds the long name of a short filename. */
 	if (!ok && matchname != NULL && gap->ga_len == start_len)
 	{
 	    STRCPY(s, matchname);
-#ifdef WIN3264
 	    FindClose(hFind);
 # ifdef FEAT_MBYTE
 	    if (wn != NULL)
@@ -10042,23 +9982,17 @@ dos_expandpath(
 	    }
 	    if (wn == NULL)
 # endif
-		hFind = FindFirstFile(buf, &fb);
+		hFind = FindFirstFile((LPCSTR)buf, &fb);
 	    ok = (hFind != INVALID_HANDLE_VALUE);
-#else
-	    ok = (findfirst((char *)buf, &fb,
-		 (*path_end != NUL || (flags & EW_DIR)) ? FA_DIREC : 0) == 0);
-#endif
 	    vim_free(matchname);
 	    matchname = NULL;
 	}
     }
 
-#ifdef WIN3264
     FindClose(hFind);
 # ifdef FEAT_MBYTE
     vim_free(wn);
 # endif
-#endif
     vim_free(buf);
     vim_regfree(regmatch.regprog);
     vim_free(matchname);
@@ -10078,7 +10012,7 @@ mch_expandpath(
 {
     return dos_expandpath(gap, path, 0, flags, FALSE);
 }
-# endif /* MSDOS || FEAT_GUI_W16 || WIN3264 */
+# endif /* WIN3264 */
 
 #if (defined(UNIX) && !defined(VMS)) || defined(USE_UNIXFILENAME) \
 	|| defined(PROTO)
@@ -10444,7 +10378,7 @@ expand_path_option(char_u *curdir, garray_T *gap)
 	if (ga_grow(gap, 1) == FAIL)
 	    break;
 
-# if defined(MSWIN) || defined(MSDOS)
+# if defined(MSWIN)
 	/* Avoid the path ending in a backslash, it fails when a comma is
 	 * appended. */
 	len = (int)STRLEN(buf);
@@ -10482,7 +10416,7 @@ get_path_cutoff(char_u *fname, garray_T *gap)
 	int j = 0;
 
 	while ((fname[j] == path_part[i][j]
-# if defined(MSWIN) || defined(MSDOS)
+# if defined(MSWIN)
 		|| (vim_ispathsep(fname[j]) && vim_ispathsep(path_part[i][j]))
 #endif
 			     ) && fname[j] != NUL && path_part[i][j] != NUL)
@@ -10603,7 +10537,7 @@ uniquefy_paths(garray_T *gap, char_u *pattern)
 	     */
 	    short_name = shorten_fname(path, curdir);
 	    if (short_name != NULL && short_name > path + 1
-#if defined(MSWIN) || defined(MSDOS)
+#if defined(MSWIN)
 		    /* On windows,
 		     *	    shorten_fname("c:\a\a.txt", "c:\a\b")
 		     * returns "\a\a.txt", which is not really the short
@@ -10743,7 +10677,7 @@ has_env_var(char_u *p)
 	if (*p == '\\' && p[1] != NUL)
 	    ++p;
 	else if (vim_strchr((char_u *)
-#if defined(MSDOS) || defined(MSWIN)
+#if defined(MSWIN)
 				    "$%"
 #else
 				    "$"

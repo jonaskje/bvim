@@ -176,10 +176,11 @@ typedef int waitstatus;
 static pid_t wait4pid(pid_t, waitstatus *);
 
 static int  WaitForChar(long);
+static int  WaitForCharOrMouse(long, int *break_loop);
 #if defined(__BEOS__) || defined(VMS)
-int  RealWaitForChar(int, long, int *);
+int  RealWaitForChar(int, long, int *, int *break_loop);
 #else
-static int  RealWaitForChar(int, long, int *);
+static int  RealWaitForChar(int, long, int *, int *break_loop);
 #endif
 
 #ifdef FEAT_XCLIPBOARD
@@ -365,7 +366,7 @@ mch_write(char_u *s, int len)
 {
     ignored = (int)write(1, (char *)s, len);
     if (p_wd)		/* Unix is too fast, slow down a bit more */
-	RealWaitForChar(read_cmd_fd, p_wd, NULL);
+	RealWaitForChar(read_cmd_fd, p_wd, NULL, NULL);
 }
 
 /*
@@ -396,7 +397,7 @@ mch_inchar(
 
     if (wtime >= 0)
     {
-	while (WaitForChar(wtime) == 0)		/* no character available */
+	while (!WaitForChar(wtime))		/* no character available */
 	{
 	    if (do_resize)
 		handle_resize();
@@ -419,7 +420,7 @@ mch_inchar(
 	 * flush all the swap files to disk.
 	 * Also done when interrupted by SIGWINCH.
 	 */
-	if (WaitForChar(p_ut) == 0)
+	if (!WaitForChar(p_ut))
 	{
 #ifdef FEAT_AUTOCMD
 	    if (trigger_cursorhold() && maxlen >= 3
@@ -447,7 +448,7 @@ mch_inchar(
 	 * We want to be interrupted by the winch signal
 	 * or by an event on the monitored file descriptors.
 	 */
-	if (WaitForChar(-1L) == 0)
+	if (!WaitForChar(-1L))
 	{
 	    if (do_resize)	    /* interrupted by SIGWINCH signal */
 		handle_resize();
@@ -481,7 +482,7 @@ handle_resize(void)
 }
 
 /*
- * return non-zero if a character is available
+ * Return non-zero if a character is available.
  */
     int
 mch_char_avail(void)
@@ -3919,6 +3920,107 @@ wait4pid(pid_t child, waitstatus *status)
     return wait_pid;
 }
 
+#if defined(FEAT_JOB_CHANNEL) || !defined(USE_SYSTEM) || defined(PROTO)
+/*
+ * Parse "cmd" and put the white-separated parts in "argv".
+ * "argv" is an allocated array with "argc" entries.
+ * Returns FAIL when out of memory.
+ */
+    int
+mch_parse_cmd(char_u *cmd, int use_shcf, char ***argv, int *argc)
+{
+    int		i;
+    char_u	*p;
+    int		inquote;
+
+    /*
+     * Do this loop twice:
+     * 1: find number of arguments
+     * 2: separate them and build argv[]
+     */
+    for (i = 0; i < 2; ++i)
+    {
+	p = skipwhite(cmd);
+	inquote = FALSE;
+	*argc = 0;
+	for (;;)
+	{
+	    if (i == 1)
+		(*argv)[*argc] = (char *)p;
+	    ++*argc;
+	    while (*p != NUL && (inquote || (*p != ' ' && *p != TAB)))
+	    {
+		if (*p == '"')
+		    inquote = !inquote;
+		++p;
+	    }
+	    if (*p == NUL)
+		break;
+	    if (i == 1)
+		*p++ = NUL;
+	    p = skipwhite(p);
+	}
+	if (*argv == NULL)
+	{
+	    if (use_shcf)
+	    {
+		/* Account for possible multiple args in p_shcf. */
+		p = p_shcf;
+		for (;;)
+		{
+		    p = skiptowhite(p);
+		    if (*p == NUL)
+			break;
+		    ++*argc;
+		    p = skipwhite(p);
+		}
+	    }
+
+	    *argv = (char **)alloc((unsigned)((*argc + 4) * sizeof(char *)));
+	    if (*argv == NULL)	    /* out of memory */
+		return FAIL;
+	}
+    }
+    return OK;
+}
+#endif
+
+#if !defined(USE_SYSTEM) || defined(FEAT_JOB_CHANNEL)
+    static void
+set_child_environment(void)
+{
+# ifdef HAVE_SETENV
+    char	envbuf[50];
+# else
+    static char	envbuf_Rows[20];
+    static char	envbuf_Columns[20];
+# endif
+
+    /* Simulate to have a dumb terminal (for now) */
+# ifdef HAVE_SETENV
+    setenv("TERM", "dumb", 1);
+    sprintf((char *)envbuf, "%ld", Rows);
+    setenv("ROWS", (char *)envbuf, 1);
+    sprintf((char *)envbuf, "%ld", Rows);
+    setenv("LINES", (char *)envbuf, 1);
+    sprintf((char *)envbuf, "%ld", Columns);
+    setenv("COLUMNS", (char *)envbuf, 1);
+# else
+    /*
+     * Putenv does not copy the string, it has to remain valid.
+     * Use a static array to avoid losing allocated memory.
+     */
+    putenv("TERM=dumb");
+    sprintf(envbuf_Rows, "ROWS=%ld", Rows);
+    putenv(envbuf_Rows);
+    sprintf(envbuf_Rows, "LINES=%ld", Rows);
+    putenv(envbuf_Rows);
+    sprintf(envbuf_Columns, "COLUMNS=%ld", Columns);
+    putenv(envbuf_Columns);
+# endif
+}
+#endif
+
     int
 mch_call_shell(
     char_u	*cmd,
@@ -4046,7 +4148,7 @@ mch_call_shell(
 # define EXEC_FAILED 122    /* Exit code when shell didn't execute.  Don't use
 			       127, some shells use that already */
 
-    char_u	*newcmd = NULL;
+    char_u	*newcmd;
     pid_t	pid;
     pid_t	wpid = 0;
     pid_t	wait_pid = 0;
@@ -4061,7 +4163,6 @@ mch_call_shell(
     char_u	*p_shcf_copy = NULL;
     int		i;
     char_u	*p;
-    int		inquote;
     int		pty_master_fd = -1;	    /* for pty's */
 # ifdef FEAT_GUI
     int		pty_slave_fd = -1;
@@ -4070,12 +4171,6 @@ mch_call_shell(
     int		fd_toshell[2];		/* for pipes */
     int		fd_fromshell[2];
     int		pipe_error = FALSE;
-# ifdef HAVE_SETENV
-    char	envbuf[50];
-# else
-    static char	envbuf_Rows[20];
-    static char	envbuf_Columns[20];
-# endif
     int		did_settmode = FALSE;	/* settmode(TMODE_RAW) called */
 
     newcmd = vim_strsave(p_sh);
@@ -4086,53 +4181,9 @@ mch_call_shell(
     if (options & SHELL_COOKED)
 	settmode(TMODE_COOK);		/* set to normal mode */
 
-    /*
-     * Do this loop twice:
-     * 1: find number of arguments
-     * 2: separate them and build argv[]
-     */
-    for (i = 0; i < 2; ++i)
-    {
-	p = newcmd;
-	inquote = FALSE;
-	argc = 0;
-	for (;;)
-	{
-	    if (i == 1)
-		argv[argc] = (char *)p;
-	    ++argc;
-	    while (*p && (inquote || (*p != ' ' && *p != TAB)))
-	    {
-		if (*p == '"')
-		    inquote = !inquote;
-		++p;
-	    }
-	    if (*p == NUL)
-		break;
-	    if (i == 1)
-		*p++ = NUL;
-	    p = skipwhite(p);
-	}
-	if (argv == NULL)
-	{
-	    /*
-	     * Account for possible multiple args in p_shcf.
-	     */
-	    p = p_shcf;
-	    for (;;)
-	    {
-		p = skiptowhite(p);
-		if (*p == NUL)
-		    break;
-		++argc;
-		p = skipwhite(p);
-	    }
+    if (mch_parse_cmd(newcmd, TRUE, &argv, &argc) == FAIL)
+	goto error;
 
-	    argv = (char **)alloc((unsigned)((argc + 4) * sizeof(char *)));
-	    if (argv == NULL)	    /* out of memory */
-		goto error;
-	}
-    }
     if (cmd != NULL)
     {
 	char_u	*s;
@@ -4329,28 +4380,7 @@ mch_call_shell(
 #  endif
 		}
 # endif
-		/* Simulate to have a dumb terminal (for now) */
-# ifdef HAVE_SETENV
-		setenv("TERM", "dumb", 1);
-		sprintf((char *)envbuf, "%ld", Rows);
-		setenv("ROWS", (char *)envbuf, 1);
-		sprintf((char *)envbuf, "%ld", Rows);
-		setenv("LINES", (char *)envbuf, 1);
-		sprintf((char *)envbuf, "%ld", Columns);
-		setenv("COLUMNS", (char *)envbuf, 1);
-# else
-		/*
-		 * Putenv does not copy the string, it has to remain valid.
-		 * Use a static array to avoid losing allocated memory.
-		 */
-		putenv("TERM=dumb");
-		sprintf(envbuf_Rows, "ROWS=%ld", Rows);
-		putenv(envbuf_Rows);
-		sprintf(envbuf_Rows, "LINES=%ld", Rows);
-		putenv(envbuf_Rows);
-		sprintf(envbuf_Columns, "COLUMNS=%ld", Columns);
-		putenv(envbuf_Columns);
-# endif
+		set_child_environment();
 
 		/*
 		 * stderr is only redirected when using the GUI, so that a
@@ -4732,7 +4762,7 @@ mch_call_shell(
 		     * to some terminal (vt52?).
 		     */
 		    ++noread_cnt;
-		    while (RealWaitForChar(fromshell_fd, 10L, NULL))
+		    while (RealWaitForChar(fromshell_fd, 10L, NULL, NULL))
 		    {
 			len = read_eintr(fromshell_fd, buffer
 # ifdef FEAT_MBYTE
@@ -4815,6 +4845,7 @@ mch_call_shell(
 			    break;
 
 # if defined(HAVE_GETTIMEOFDAY) && defined(HAVE_SYS_TIME_H)
+			if (wait_pid == 0)
 			{
 			    struct timeval  now_tv;
 			    long	    msec;
@@ -4824,7 +4855,7 @@ mch_call_shell(
 			     * break out too often to avoid losing typeahead. */
 			    gettimeofday(&now_tv, NULL);
 			    msec = (now_tv.tv_sec - start_tv.tv_sec) * 1000L
-				+ (now_tv.tv_usec - start_tv.tv_usec) / 1000L;
+				 + (now_tv.tv_usec - start_tv.tv_usec) / 1000L;
 			    if (msec > 2000)
 			    {
 				noread_cnt = 5;
@@ -4834,10 +4865,15 @@ mch_call_shell(
 # endif
 		    }
 
-		    /* If we already detected the child has finished break the
-		     * loop now. */
+		    /* If we already detected the child has finished, continue
+		     * reading output for a short while.  Some text may be
+		     * buffered. */
 		    if (wait_pid == pid)
+		    {
+			if (noread_cnt < 5)
+			    continue;
 			break;
+		    }
 
 		    /*
 		     * Check if the child still exists, before checking for
@@ -5006,6 +5042,309 @@ error:
 #endif /* USE_SYSTEM */
 }
 
+#if defined(FEAT_JOB_CHANNEL) || defined(PROTO)
+    void
+mch_start_job(char **argv, job_T *job, jobopt_T *options UNUSED)
+{
+    pid_t	pid;
+    int		fd_in[2];	/* for stdin */
+    int		fd_out[2];	/* for stdout */
+    int		fd_err[2];	/* for stderr */
+    channel_T	*channel = NULL;
+    int		use_null_for_in = options->jo_io[PART_IN] == JIO_NULL;
+    int		use_null_for_out = options->jo_io[PART_OUT] == JIO_NULL;
+    int		use_null_for_err = options->jo_io[PART_ERR] == JIO_NULL;
+    int		use_file_for_in = options->jo_io[PART_IN] == JIO_FILE;
+    int		use_file_for_out = options->jo_io[PART_OUT] == JIO_FILE;
+    int		use_file_for_err = options->jo_io[PART_ERR] == JIO_FILE;
+    int		use_out_for_err = options->jo_io[PART_ERR] == JIO_OUT;
+
+    if (use_out_for_err && use_null_for_out)
+	use_null_for_err = TRUE;
+
+    /* default is to fail */
+    job->jv_status = JOB_FAILED;
+    fd_in[0] = -1;
+    fd_in[1] = -1;
+    fd_out[0] = -1;
+    fd_out[1] = -1;
+    fd_err[0] = -1;
+    fd_err[1] = -1;
+
+    /* TODO: without the channel feature connect the child to /dev/null? */
+    /* Open pipes for stdin, stdout, stderr. */
+    if (use_file_for_in)
+    {
+	char_u *fname = options->jo_io_name[PART_IN];
+
+	fd_in[0] = mch_open((char *)fname, O_RDONLY, 0);
+	if (fd_in[0] < 0)
+	{
+	    EMSG2(_(e_notopen), fname);
+	    goto failed;
+	}
+    }
+    else if (!use_null_for_in && pipe(fd_in) < 0)
+	goto failed;
+
+    if (use_file_for_out)
+    {
+	char_u *fname = options->jo_io_name[PART_OUT];
+
+	fd_out[1] = mch_open((char *)fname, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	if (fd_out[1] < 0)
+	{
+	    EMSG2(_(e_notopen), fname);
+	    goto failed;
+	}
+    }
+    else if (!use_null_for_out && pipe(fd_out) < 0)
+	goto failed;
+
+    if (use_file_for_err)
+    {
+	char_u *fname = options->jo_io_name[PART_ERR];
+
+	fd_err[1] = mch_open((char *)fname, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+	if (fd_err[1] < 0)
+	{
+	    EMSG2(_(e_notopen), fname);
+	    goto failed;
+	}
+    }
+    else if (!use_out_for_err && !use_null_for_err && pipe(fd_err) < 0)
+	goto failed;
+
+    if (!use_null_for_in || !use_null_for_out || !use_null_for_err)
+    {
+	if (options->jo_set & JO_CHANNEL)
+	{
+	    channel = options->jo_channel;
+	    if (channel != NULL)
+		++channel->ch_refcount;
+	}
+	else
+	    channel = add_channel();
+	if (channel == NULL)
+	    goto failed;
+    }
+
+    pid = fork();	/* maybe we should use vfork() */
+    if (pid  == -1)
+    {
+	/* failed to fork */
+	goto failed;
+    }
+
+    if (pid == 0)
+    {
+	int	null_fd = -1;
+	int	stderr_works = TRUE;
+
+	/* child */
+	reset_signals();		/* handle signals normally */
+
+# ifdef HAVE_SETSID
+	/* Create our own process group, so that the child and all its
+	 * children can be kill()ed.  Don't do this when using pipes,
+	 * because stdin is not a tty, we would lose /dev/tty. */
+	(void)setsid();
+# endif
+
+	set_child_environment();
+
+	if (use_null_for_in || use_null_for_out || use_null_for_err)
+	    null_fd = open("/dev/null", O_RDWR | O_EXTRA, 0);
+
+	/* set up stdin for the child */
+	if (use_null_for_in && null_fd >= 0)
+	{
+	    close(0);
+	    ignored = dup(null_fd);
+	}
+	else
+	{
+	    if (!use_file_for_in)
+		close(fd_in[1]);
+	    close(0);
+	    ignored = dup(fd_in[0]);
+	    close(fd_in[0]);
+	}
+
+	/* set up stderr for the child */
+	if (use_null_for_err && null_fd >= 0)
+	{
+	    close(2);
+	    ignored = dup(null_fd);
+	    stderr_works = FALSE;
+	}
+	else if (use_out_for_err)
+	{
+	    close(2);
+	    ignored = dup(fd_out[1]);
+	}
+	else
+	{
+	    if (!use_file_for_err)
+		close(fd_err[0]);
+	    close(2);
+	    ignored = dup(fd_err[1]);
+	    close(fd_err[1]);
+	}
+
+	/* set up stdout for the child */
+	if (use_null_for_out && null_fd >= 0)
+	{
+	    close(0);
+	    ignored = dup(null_fd);
+	}
+	else
+	{
+	    if (!use_file_for_out)
+		close(fd_out[0]);
+	    close(1);
+	    ignored = dup(fd_out[1]);
+	    close(fd_out[1]);
+	}
+	if (null_fd >= 0)
+	    close(null_fd);
+
+	/* See above for type of argv. */
+	execvp(argv[0], argv);
+
+	if (stderr_works)
+	    perror("executing job failed");
+	_exit(EXEC_FAILED);	    /* exec failed, return failure code */
+    }
+
+    /* parent */
+    job->jv_pid = pid;
+    job->jv_status = JOB_STARTED;
+    job->jv_channel = channel;  /* ch_refcount was set above */
+
+    /* child stdin, stdout and stderr */
+    if (!use_file_for_in && fd_in[0] >= 0)
+	close(fd_in[0]);
+    if (!use_file_for_out && fd_out[1] >= 0)
+	close(fd_out[1]);
+    if (!use_out_for_err && !use_file_for_err && fd_err[1] >= 0)
+	close(fd_err[1]);
+    if (channel != NULL)
+    {
+	channel_set_pipes(channel,
+		      use_file_for_in || use_null_for_in
+						      ? INVALID_FD : fd_in[1],
+		      use_file_for_out || use_null_for_out
+						     ? INVALID_FD : fd_out[0],
+		      use_out_for_err || use_file_for_err || use_null_for_err
+						    ? INVALID_FD : fd_err[0]);
+	channel_set_job(channel, job, options);
+    }
+
+    /* success! */
+    return;
+
+failed:
+    channel_unref(channel);
+    if (fd_in[0] >= 0)
+	close(fd_in[0]);
+    if (fd_in[1] >= 0)
+	close(fd_in[1]);
+    if (fd_out[0] >= 0)
+	close(fd_out[0]);
+    if (fd_out[1] >= 0)
+	close(fd_out[1]);
+    if (fd_err[0] >= 0)
+	close(fd_err[0]);
+    if (fd_err[1] >= 0)
+	close(fd_err[1]);
+}
+
+    char *
+mch_job_status(job_T *job)
+{
+# ifdef HAVE_UNION_WAIT
+    union wait	status;
+# else
+    int		status = -1;
+# endif
+    pid_t	wait_pid = 0;
+
+# ifdef __NeXT__
+    wait_pid = wait4(job->jv_pid, &status, WNOHANG, (struct rusage *)0);
+# else
+    wait_pid = waitpid(job->jv_pid, &status, WNOHANG);
+# endif
+    if (wait_pid == -1)
+    {
+	/* process must have exited */
+	job->jv_status = JOB_ENDED;
+	return "dead";
+    }
+    if (wait_pid == 0)
+	return "run";
+    if (WIFEXITED(status))
+    {
+	/* LINTED avoid "bitwise operation on signed value" */
+	job->jv_exitval = WEXITSTATUS(status);
+	job->jv_status = JOB_ENDED;
+	return "dead";
+    }
+    if (WIFSIGNALED(status))
+    {
+	job->jv_exitval = -1;
+	job->jv_status = JOB_ENDED;
+	return "dead";
+    }
+    return "run";
+}
+
+    int
+mch_stop_job(job_T *job, char_u *how)
+{
+    int	    sig = -1;
+    pid_t   job_pid;
+
+    if (*how == NUL || STRCMP(how, "term") == 0)
+	sig = SIGTERM;
+    else if (STRCMP(how, "hup") == 0)
+	sig = SIGHUP;
+    else if (STRCMP(how, "quit") == 0)
+	sig = SIGQUIT;
+    else if (STRCMP(how, "int") == 0)
+	sig = SIGINT;
+    else if (STRCMP(how, "kill") == 0)
+	sig = SIGKILL;
+    else if (isdigit(*how))
+	sig = atoi((char *)how);
+    else
+	return FAIL;
+
+    /* TODO: have an option to only kill the process, not the group? */
+    job_pid = job->jv_pid;
+    if (job_pid == getpgid(job_pid))
+	job_pid = -job_pid;
+
+    kill(job_pid, sig);
+
+    return OK;
+}
+
+/*
+ * Clear the data related to "job".
+ */
+    void
+mch_clear_job(job_T *job)
+{
+    /* call waitpid because child process may become zombie */
+# ifdef __NeXT__
+    (void)wait4(job->jv_pid, NULL, WNOHANG, (struct rusage *)0);
+# else
+    (void)waitpid(job->jv_pid, NULL, WNOHANG);
+# endif
+}
+#endif
+
 /*
  * Check for CTRL-C typed by reading all available characters.
  * In cooked mode we should get SIGINT, no need to check.
@@ -5013,17 +5352,66 @@ error:
     void
 mch_breakcheck(void)
 {
-    if (curr_tmode == TMODE_RAW && RealWaitForChar(read_cmd_fd, 0L, NULL))
+    if (curr_tmode == TMODE_RAW && RealWaitForChar(read_cmd_fd, 0L, NULL, NULL))
 	fill_input_buf(FALSE);
 }
 
 /*
- * Wait "msec" msec until a character is available from the keyboard or from
- * inbuf[]. msec == -1 will block forever.
+ * Wait "msec" msec until a character is available from the mouse, keyboard,
+ * from inbuf[].
+ * "msec" == -1 will block forever.
+ * Invokes timer callbacks when needed.
  * When a GUI is being used, this will never get called -- webb
+ * Returns TRUE when a character is available.
  */
     static int
 WaitForChar(long msec)
+{
+#ifdef FEAT_TIMERS
+    long    due_time;
+    long    remaining = msec;
+    int	    break_loop = FALSE;
+    int	    tb_change_cnt = typebuf.tb_change_cnt;
+
+    /* When waiting very briefly don't trigger timers. */
+    if (msec >= 0 && msec < 10L)
+	return WaitForCharOrMouse(msec, NULL);
+
+    while (msec < 0 || remaining > 0)
+    {
+	/* Trigger timers and then get the time in msec until the next one is
+	 * due.  Wait up to that time. */
+	due_time = check_due_timer();
+	if (typebuf.tb_change_cnt != tb_change_cnt)
+	{
+	    /* timer may have used feedkeys() */
+	    return FALSE;
+	}
+	if (due_time <= 0 || (msec > 0 && due_time > remaining))
+	    due_time = remaining;
+	if (WaitForCharOrMouse(due_time, &break_loop))
+	    return TRUE;
+	if (break_loop)
+	    /* Nothing available, but need to return so that side effects get
+	     * handled, such as handling a message on a channel. */
+	    return FALSE;
+	if (msec > 0)
+	    remaining -= due_time;
+    }
+    return FALSE;
+#else
+    return WaitForCharOrMouse(msec, NULL);
+#endif
+}
+
+/*
+ * Wait "msec" msec until a character is available from the mouse or keyboard
+ * or from inbuf[].
+ * "msec" == -1 will block forever.
+ * When a GUI is being used, this will never get called -- webb
+ */
+    static int
+WaitForCharOrMouse(long msec, int *break_loop)
 {
 #ifdef FEAT_MOUSE_GPM
     int		gpm_process_wanted;
@@ -5069,9 +5457,10 @@ WaitForChar(long msec)
 # endif
 # ifdef FEAT_MOUSE_GPM
 	gpm_process_wanted = 0;
-	avail = RealWaitForChar(read_cmd_fd, msec, &gpm_process_wanted);
+	avail = RealWaitForChar(read_cmd_fd, msec,
+					     &gpm_process_wanted, break_loop);
 # else
-	avail = RealWaitForChar(read_cmd_fd, msec, NULL);
+	avail = RealWaitForChar(read_cmd_fd, msec, NULL, break_loop);
 # endif
 	if (!avail)
 	{
@@ -5090,10 +5479,11 @@ WaitForChar(long msec)
 # ifdef FEAT_XCLIPBOARD
 	   || (!avail && rest != 0)
 # endif
-	  );
+	  )
+	;
 
 #else
-    avail = RealWaitForChar(read_cmd_fd, msec, NULL);
+    avail = RealWaitForChar(read_cmd_fd, msec, NULL, break_loop);
 #endif
     return avail;
 }
@@ -5104,18 +5494,18 @@ WaitForChar(long msec)
  * "msec" == 0 will check for characters once.
  * "msec" == -1 will block until a character is available.
  * When a GUI is being used, this will not be used for input -- webb
- * Returns also, when a request from Sniff is waiting -- toni.
  * Or when a Linux GPM mouse event is waiting.
  * Or when a clientserver message is on the queue.
  */
 #if defined(__BEOS__)
     int
 #else
-    static  int
+    static int
 #endif
-RealWaitForChar(int fd, long msec, int *check_for_gpm UNUSED)
+RealWaitForChar(int fd, long msec, int *check_for_gpm UNUSED, int *break_loop)
 {
     int		ret;
+    int		result;
 #if defined(FEAT_XCLIPBOARD) || defined(USE_XSMP) || defined(FEAT_MZSCHEME)
     static int	busy = FALSE;
 
@@ -5165,7 +5555,8 @@ RealWaitForChar(int fd, long msec, int *check_for_gpm UNUSED)
 # endif
 #endif
 #ifndef HAVE_SELECT
-	struct pollfd   fds[6 + MAX_OPEN_CHANNELS];
+			/* each channel may use in, out and err */
+	struct pollfd   fds[6 + 3 * MAX_OPEN_CHANNELS];
 	int		nfd;
 # ifdef FEAT_XCLIPBOARD
 	int		xterm_idx = -1;
@@ -5190,15 +5581,6 @@ RealWaitForChar(int fd, long msec, int *check_for_gpm UNUSED)
 	fds[0].events = POLLIN;
 	nfd = 1;
 
-# ifdef FEAT_SNIFF
-#  define SNIFF_IDX 1
-	if (want_sniff_request)
-	{
-	    fds[SNIFF_IDX].fd = fd_from_sniff;
-	    fds[SNIFF_IDX].events = POLLIN;
-	    nfd++;
-	}
-# endif
 # ifdef FEAT_XCLIPBOARD
 	may_restore_clipboard();
 	if (xterm_Shell != (Widget)0)
@@ -5227,28 +5609,22 @@ RealWaitForChar(int fd, long msec, int *check_for_gpm UNUSED)
 	    nfd++;
 	}
 # endif
-#ifdef FEAT_CHANNEL
+#ifdef FEAT_JOB_CHANNEL
 	nfd = channel_poll_setup(nfd, &fds);
 #endif
 
 	ret = poll(fds, nfd, towait);
+
+	result = ret > 0 && (fds[0].revents & POLLIN);
+	if (break_loop != NULL && ret > 0)
+	    *break_loop = TRUE;
+
 # ifdef FEAT_MZSCHEME
 	if (ret == 0 && mzquantum_used)
 	    /* MzThreads scheduling is required and timeout occurred */
 	    finished = FALSE;
 # endif
 
-# ifdef FEAT_SNIFF
-	if (ret < 0)
-	    sniff_disconnect(1);
-	else if (want_sniff_request)
-	{
-	    if (fds[SNIFF_IDX].revents & POLLHUP)
-		sniff_disconnect(1);
-	    if (fds[SNIFF_IDX].revents & POLLIN)
-		sniff_request_waiting = 1;
-	}
-# endif
 # ifdef FEAT_XCLIPBOARD
 	if (xterm_Shell != (Widget)0 && (fds[xterm_idx].revents & POLLIN))
 	{
@@ -5283,7 +5659,7 @@ RealWaitForChar(int fd, long msec, int *check_for_gpm UNUSED)
 		finished = FALSE;	/* Try again */
 	}
 # endif
-#ifdef FEAT_CHANNEL
+#ifdef FEAT_JOB_CHANNEL
 	if (ret > 0)
 	    ret = channel_poll_check(ret, &fds);
 #endif
@@ -5293,7 +5669,7 @@ RealWaitForChar(int fd, long msec, int *check_for_gpm UNUSED)
 
 	struct timeval  tv;
 	struct timeval	*tvp;
-	fd_set		rfds, efds;
+	fd_set		rfds, wfds, efds;
 	int		maxfd;
 	long		towait = msec;
 
@@ -5326,6 +5702,7 @@ RealWaitForChar(int fd, long msec, int *check_for_gpm UNUSED)
 	 */
 select_eintr:
 	FD_ZERO(&rfds);
+	FD_ZERO(&wfds);
 	FD_ZERO(&efds);
 	FD_SET(fd, &rfds);
 # if !defined(__QNX__) && !defined(__CYGWIN32__)
@@ -5334,15 +5711,6 @@ select_eintr:
 # endif
 	maxfd = fd;
 
-# ifdef FEAT_SNIFF
-	if (want_sniff_request)
-	{
-	    FD_SET(fd_from_sniff, &rfds);
-	    FD_SET(fd_from_sniff, &efds);
-	    if (maxfd < fd_from_sniff)
-		maxfd = fd_from_sniff;
-	}
-# endif
 # ifdef FEAT_XCLIPBOARD
 	may_restore_clipboard();
 	if (xterm_Shell != (Widget)0)
@@ -5374,11 +5742,17 @@ select_eintr:
 		maxfd = xsmp_icefd;
 	}
 # endif
-# ifdef FEAT_CHANNEL
-	maxfd = channel_select_setup(maxfd, &rfds);
+# ifdef FEAT_JOB_CHANNEL
+	maxfd = channel_select_setup(maxfd, &rfds, &wfds);
 # endif
 
-	ret = select(maxfd + 1, &rfds, NULL, &efds, tvp);
+	ret = select(maxfd + 1, &rfds, &wfds, &efds, tvp);
+	result = ret > 0 && FD_ISSET(fd, &rfds);
+	if (result)
+	    --ret;
+	if (break_loop != NULL && ret > 0)
+	    *break_loop = TRUE;
+
 # ifdef EINTR
 	if (ret == -1 && errno == EINTR)
 	{
@@ -5408,17 +5782,6 @@ select_eintr:
 	    finished = FALSE;
 # endif
 
-# ifdef FEAT_SNIFF
-	if (ret < 0 )
-	    sniff_disconnect(1);
-	else if (ret > 0 && want_sniff_request)
-	{
-	    if (FD_ISSET(fd_from_sniff, &efds))
-		sniff_disconnect(1);
-	    if (FD_ISSET(fd_from_sniff, &rfds))
-		sniff_request_waiting = 1;
-	}
-# endif
 # ifdef FEAT_XCLIPBOARD
 	if (ret > 0 && xterm_Shell != (Widget)0
 		&& FD_ISSET(ConnectionNumber(xterm_dpy), &rfds))
@@ -5463,9 +5826,9 @@ select_eintr:
 	    }
 	}
 # endif
-#ifdef FEAT_CHANNEL
+#ifdef FEAT_JOB_CHANNEL
 	if (ret > 0)
-	    ret = channel_select_check(ret, &rfds);
+	    ret = channel_select_check(ret, &rfds, &wfds);
 #endif
 
 #endif /* HAVE_SELECT */
@@ -5499,7 +5862,7 @@ select_eintr:
 #endif
     }
 
-    return (ret > 0);
+    return result;
 }
 
 #ifndef NO_EXPANDPATH
@@ -6251,14 +6614,14 @@ have_dollars(int num, char_u **file)
 }
 #endif	/* ifndef __EMX__ */
 
-#ifndef HAVE_RENAME
+#if !defined(HAVE_RENAME) || defined(PROTO)
 /*
  * Scaled-down version of rename(), which is missing in Xenix.
  * This version can only move regular files and will fail if the
  * destination exists.
  */
     int
-mch_rename(const char *src, *dest)
+mch_rename(const char *src, const char *dest)
 {
     struct stat	    st;
 

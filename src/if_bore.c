@@ -129,7 +129,10 @@ static int bore_is_excluded_file(const char* path)
     const char* ext = (char*)vim_strrchr((char_u*)path, '.');
     if (ext)
     {
-        if (0 == STRICMP((char*)ext, ".dll") || 0 == STRICMP((char*)ext, ".vcxproj") || 0 == STRICMP((char*)ext, ".exe"))
+        if (0 == STRICMP((char*)ext, ".pdb") ||
+            0 == STRICMP((char*)ext, ".dll") ||
+            0 == STRICMP((char*)ext, ".vcxproj") ||
+            0 == STRICMP((char*)ext, ".exe"))
             return 1;
     }
 
@@ -630,30 +633,49 @@ static int bore_extract_sln_from_path(bore_t* b, const char* path)
 
     int path_len = strlen(buf);
     b->sln_dir = bore_strndup(b, buf, path_len + 1); // trailing backslash
+    char* sln_dir_str = bore_str(b, b->sln_dir);
 
     if (path_attr & FILE_ATTRIBUTE_DIRECTORY)
     {
-        char* sln_dir_str = bore_str(b, b->sln_dir);
+        b->sln_path = b->sln_dir;
+
         char* pc = vim_strrchr(sln_dir_str, '.');
         // Special case. If the solution path is .git folder, then assume
         // code paths start one level up from that
         if (pc && 0 == STRNCMP(pc, ".git", 4) && (pc[4] == '\\' || pc[4] == 0))
-            pc[0] = 0; // Keep trailing backslash
+            *(pc - 1) = 0; // Remove trailing backslash
         else
         {
-            char* pe = sln_dir_str + path_len - 1;
-            if (pe[0] != '\\')
-            {
-                pe[1] = '\\'; // Add trailing backslash
-                pe[2] = 0;
-            }
+            pc = sln_dir_str + path_len - 1;
+            if (*pc == '\\')
+                *pc = 0; // Remove trailing backslash
         }
-        b->sln_path = b->sln_dir;
+
+        // set solution name to deepest directory name
+        pc = vim_strrchr(sln_dir_str, '\\');
+        if (pc)
+            ++pc;
+        else
+            pc = sln_dir_str;
+        b->sln_name = bore_strndup(b, pc, strlen(pc));
+
+        // Add trailing backslash
+        pc = sln_dir_str + strlen(sln_dir_str);
+        *pc++ = '\\';
+        *pc = 0;
     }
     else
     {
-        char* sln_dir_str = bore_str(b, b->sln_dir);
+        b->sln_path = bore_strndup(b, buf, path_len);
+
         char* pc = vim_strrchr(sln_dir_str, '\\');
+
+        // set solution name to file name part of path
+        if (pc)
+            b->sln_name = b->sln_path + (pc - sln_dir_str) + 1;
+        else
+            b->sln_name = b->sln_path;
+
         if (pc) {
             pc[1] = 0; // Keep trailing backslash
 
@@ -668,7 +690,6 @@ static int bore_extract_sln_from_path(bore_t* b, const char* path)
                 }
             }
         }
-        b->sln_path = bore_strndup(b, buf, path_len);
     }
 
     return OK;
@@ -714,6 +735,8 @@ static void bore_load_sln(const char* path)
     ++msg_silent;
     do_cmdline_cmd(buf);
     --msg_silent;
+
+    serverSetName(bore_str(b, b->sln_name));
 
     bore_load_ini(&b->ini, bore_str(b, b->sln_dir));
 
@@ -1378,7 +1401,7 @@ void borefind_parse_options(char* arg, bore_search_t* search)
         // _strlwr_s(what, search.what_len);
         char* c = what;
         for (; *c; ++c)
-            *c = tolower(*c);
+            *c = TOLOWER_LOC(*c);
     }
 
     search->what = what;

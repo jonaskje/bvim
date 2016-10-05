@@ -10,7 +10,7 @@
  *
  * term.c: functions for controlling the terminal
  *
- * primitive termcap support for Amiga, MSDOS, and Win32 included
+ * primitive termcap support for Amiga and Win32 included
  *
  * NOTE: padding and variable substitution is not performed,
  * when compiling without HAVE_TGETENT, we use tputs() and tgoto() dummies.
@@ -77,6 +77,9 @@ struct builtin_term
 static struct builtin_term *find_builtin_term(char_u *name);
 static void parse_builtin_tcap(char_u *s);
 static void term_color(char_u *s, int n);
+#ifdef FEAT_TERMTRUECOLOR
+static void term_rgb_color(char_u *s, long_u rgb);
+#endif
 static void gather_termleader(void);
 #ifdef FEAT_TERMRESPONSE
 static void req_codes_from_term(void);
@@ -179,13 +182,13 @@ static struct builtin_term builtin_termcaps[] =
 # ifdef TERMINFO
     {(int)KS_CDL,	IF_EB("\033|%p1%dD", ESC_STR "|%p1%dD")},
     {(int)KS_CS,	IF_EB("\033|%p1%d;%p2%dR", ESC_STR "|%p1%d;%p2%dR")},
-#  ifdef FEAT_VERTSPLIT
+#  ifdef FEAT_WINDOWS
     {(int)KS_CSV,	IF_EB("\033|%p1%d;%p2%dV", ESC_STR "|%p1%d;%p2%dV")},
 #  endif
 # else
     {(int)KS_CDL,	IF_EB("\033|%dD", ESC_STR "|%dD")},
     {(int)KS_CS,	IF_EB("\033|%d;%dR", ESC_STR "|%d;%dR")},
-#  ifdef FEAT_VERTSPLIT
+#  ifdef FEAT_WINDOWS
     {(int)KS_CSV,	IF_EB("\033|%d;%dV", ESC_STR "|%d;%dV")},
 #  endif
 # endif
@@ -382,9 +385,9 @@ static struct builtin_term builtin_termcaps[] =
 #  else
     {(int)KS_CRI,	"\033[%dC"},
 #  endif
-#if defined(BEOS_DR8)
+#  if defined(BEOS_DR8)
     {(int)KS_DB,	""},		/* hack! see screen.c */
-#endif
+#  endif
 
     {K_UP,		"\033[A"},
     {K_DOWN,		"\033[B"},
@@ -428,7 +431,7 @@ static struct builtin_term builtin_termcaps[] =
 #  endif
 # endif
 
-# if defined(MSDOS) || defined(ALL_BUILTIN_TCAPS) || defined(__EMX__)
+# if defined(ALL_BUILTIN_TCAPS) || defined(__EMX__)
 /*
  * These codes are valid when nansi.sys or equivalent has been installed.
  * Function keys on a PC are preceded with a NUL. These are converted into
@@ -511,107 +514,6 @@ static struct builtin_term builtin_termcaps[] =
     {K_END,		"\316O"},
     {K_PAGEDOWN,	"\316Q"},
     {K_PAGEUP,		"\316I"},
-# endif
-
-# if defined(MSDOS)
-/*
- * These codes are valid for the pc video.  The entries that start with ESC |
- * are translated into conio calls in os_msdos.c. Default for MSDOS.
- */
-    {(int)KS_NAME,	"pcterm"},
-    {(int)KS_CE,	"\033|K"},
-    {(int)KS_AL,	"\033|L"},
-    {(int)KS_DL,	"\033|M"},
-#  ifdef TERMINFO
-    {(int)KS_CS,	"\033|%i%p1%d;%p2%dr"},
-#   ifdef FEAT_VERTSPLIT
-    {(int)KS_CSV,	"\033|%i%p1%d;%p2%dV"},
-#   endif
-#  else
-    {(int)KS_CS,	"\033|%i%d;%dr"},
-#   ifdef FEAT_VERTSPLIT
-    {(int)KS_CSV,	"\033|%i%d;%dV"},
-#   endif
-#  endif
-    {(int)KS_CL,	"\033|J"},
-    {(int)KS_ME,	"\033|0m"},	/* normal */
-    {(int)KS_MR,	"\033|112m"},	/* reverse: black on lightgrey */
-    {(int)KS_MD,	"\033|15m"},	/* bold: white text */
-    {(int)KS_SE,	"\033|0m"},	/* standout end */
-    {(int)KS_SO,	"\033|31m"},	/* standout: white on blue */
-    {(int)KS_CZH,	"\033|225m"},	/* italic mode: blue text on yellow */
-    {(int)KS_CZR,	"\033|0m"},	/* italic mode end */
-    {(int)KS_US,	"\033|67m"},	/* underscore mode: cyan text on red */
-    {(int)KS_UE,	"\033|0m"},	/* underscore mode end */
-    {(int)KS_CCO,	"16"},		/* allow 16 colors */
-#  ifdef TERMINFO
-    {(int)KS_CAB,	"\033|%p1%db"},	/* set background color */
-    {(int)KS_CAF,	"\033|%p1%df"},	/* set foreground color */
-#  else
-    {(int)KS_CAB,	"\033|%db"},	/* set background color */
-    {(int)KS_CAF,	"\033|%df"},	/* set foreground color */
-#  endif
-    {(int)KS_MS,	"y"},
-    {(int)KS_UT,	"y"},
-    {(int)KS_LE,	"\b"},
-#  ifdef TERMINFO
-    {(int)KS_CM,	"\033|%i%p1%d;%p2%dH"},
-#  else
-    {(int)KS_CM,	"\033|%i%d;%dH"},
-#  endif
-#ifdef DJGPP
-    {(int)KS_VB,	"\033|B"},	/* visual bell */
-#endif
-    {K_UP,		"\316H"},
-    {K_DOWN,		"\316P"},
-    {K_LEFT,		"\316K"},
-    {K_RIGHT,		"\316M"},
-    {K_S_LEFT,		"\316s"},
-    {K_S_RIGHT,		"\316t"},
-    {K_S_TAB,		"\316\017"},
-    {K_F1,		"\316;"},
-    {K_F2,		"\316<"},
-    {K_F3,		"\316="},
-    {K_F4,		"\316>"},
-    {K_F5,		"\316?"},
-    {K_F6,		"\316@"},
-    {K_F7,		"\316A"},
-    {K_F8,		"\316B"},
-    {K_F9,		"\316C"},
-    {K_F10,		"\316D"},
-    {K_F11,		"\316\205"},
-    {K_F12,		"\316\206"},
-    {K_S_F1,		"\316T"},
-    {K_S_F2,		"\316U"},
-    {K_S_F3,		"\316V"},
-    {K_S_F4,		"\316W"},
-    {K_S_F5,		"\316X"},
-    {K_S_F6,		"\316Y"},
-    {K_S_F7,		"\316Z"},
-    {K_S_F8,		"\316["},
-    {K_S_F9,		"\316\\"},
-    {K_S_F10,		"\316]"},
-    {K_S_F11,		"\316\207"},
-    {K_S_F12,		"\316\210"},
-    {K_INS,		"\316R"},
-    {K_DEL,		"\316S"},
-    {K_HOME,		"\316G"},
-    {K_END,		"\316O"},
-    {K_PAGEDOWN,	"\316Q"},
-    {K_PAGEUP,		"\316I"},
-    {K_KPLUS,		"\316N"},
-    {K_KMINUS,		"\316J"},
-    {K_KMULTIPLY,	"\3167"},
-    {K_K0,		"\316\332"},
-    {K_K1,		"\316\336"},
-    {K_K2,		"\316\342"},
-    {K_K3,		"\316\346"},
-    {K_K4,		"\316\352"},
-    {K_K5,		"\316\356"},
-    {K_K6,		"\316\362"},
-    {K_K7,		"\316\366"},
-    {K_K8,		"\316\372"},
-    {K_K9,		"\316\376"},
 # endif
 
 # if defined(WIN3264) || defined(ALL_BUILTIN_TCAPS) || defined(__EMX__)
@@ -957,6 +859,11 @@ static struct builtin_term builtin_termcaps[] =
     {(int)KS_CRV,	IF_EB("\033[>c", ESC_STR "[>c")},
     {(int)KS_RBG,	IF_EB("\033]11;?\007", ESC_STR "]11;?\007")},
     {(int)KS_U7,	IF_EB("\033[6n", ESC_STR "[6n")},
+#  ifdef FEAT_TERMTRUECOLOR
+    /* These are printf strings, not terminal codes. */
+    {(int)KS_8F,	IF_EB("\033[38;2;%lu;%lu;%lum", ESC_STR "[38;2;%lu;%lu;%lum")},
+    {(int)KS_8B,	IF_EB("\033[48;2;%lu;%lu;%lum", ESC_STR "[48;2;%lu;%lu;%lum")},
+#  endif
 
     {K_UP,		IF_EB("\033O*A", ESC_STR "O*A")},
     {K_DOWN,		IF_EB("\033O*B", ESC_STR "O*B")},
@@ -1181,7 +1088,7 @@ static struct builtin_term builtin_termcaps[] =
 #  else
     {(int)KS_CS,	"[%dCS%d]"},
 #  endif
-#  ifdef FEAT_VERTSPLIT
+#  ifdef FEAT_WINDOWS
 #   ifdef TERMINFO
     {(int)KS_CSV,	"[%p1%dCSV%p2%d]"},
 #   else
@@ -1358,6 +1265,34 @@ static struct builtin_term builtin_termcaps[] =
 
 };	/* end of builtin_termcaps */
 
+#if defined(FEAT_TERMTRUECOLOR) || defined(PROTO)
+    guicolor_T
+termtrue_mch_get_color(char_u *name)
+{
+    return gui_get_color_cmn(name);
+}
+
+    guicolor_T
+termtrue_get_color(char_u *name)
+{
+    guicolor_T	t;
+
+    if (*name == NUL)
+	return INVALCOLOR;
+    t = termtrue_mch_get_color(name);
+
+    if (t == INVALCOLOR)
+	EMSG2(_("E254: Cannot allocate color %s"), name);
+    return t;
+}
+
+    long_u
+termtrue_mch_get_rgb(guicolor_T color)
+{
+    return (long_u) color;
+}
+#endif
+
 /*
  * DEFAULT_TERM is used, when no terminal is specified with -T option or $TERM.
  */
@@ -1367,10 +1302,6 @@ static struct builtin_term builtin_termcaps[] =
 
 #ifdef MSWIN
 # define DEFAULT_TERM	(char_u *)"win32"
-#endif
-
-#ifdef MSDOS
-# define DEFAULT_TERM	(char_u *)"pcterm"
 #endif
 
 #if defined(UNIX) && !defined(__MINT__)
@@ -1617,6 +1548,7 @@ set_termname(char_u *term)
 				{KS_CWP, "WP"}, {KS_CWS, "WS"},
 				{KS_CSI, "SI"}, {KS_CEI, "EI"},
 				{KS_U7, "u7"}, {KS_RBG, "RB"},
+				{KS_8F, "8f"}, {KS_8B, "8b"},
 				{(enum SpecialKey)0, NULL}
 			    };
 
@@ -1901,16 +1833,6 @@ set_termname(char_u *term)
 # endif
 #endif	/* FEAT_MOUSE */
 
-#ifdef FEAT_SNIFF
-    {
-	char_u	name[2];
-
-	name[0] = (int)KS_EXTRA;
-	name[1] = (int)KE_SNIFF;
-	add_termcode(name, (char_u *)"\233sniff", FALSE);
-    }
-#endif
-
 #ifdef USE_TERM_CONSOLE
     /* DEFAULT_TERM indicates that it is the machine console. */
     if (STRCMP(term, DEFAULT_TERM) != 0)
@@ -1971,7 +1893,7 @@ set_termname(char_u *term)
 	/* termcap failed to report size */
 	/* set defaults, in case ui_get_shellsize() also fails */
 	width = 80;
-#if defined(MSDOS) || defined(WIN3264)
+#if defined(WIN3264)
 	height = 25;	    /* console is often 25 lines */
 #else
 	height = 24;	    /* most terminals are 24 lines */
@@ -2479,11 +2401,7 @@ termcapinit(char_u *name)
 #ifdef DOS16
 # define OUT_SIZE	255		/* only have 640K total... */
 #else
-# ifdef FEAT_GUI_W16
-#  define OUT_SIZE	1023		/* Save precious 1K near data */
-# else
-#  define OUT_SIZE	2047
-# endif
+# define OUT_SIZE	2047
 #endif
 	    /* Add one to allow mch_write() in os_win32.c to append a NUL */
 static char_u		out_buf[OUT_SIZE + 1];
@@ -2726,6 +2644,35 @@ term_color(char_u *s, int n)
     else
 	OUT_STR(tgoto((char *)s, 0, n));
 }
+
+#if defined(FEAT_TERMTRUECOLOR) || defined(PROTO)
+    void
+term_fg_rgb_color(long_u rgb)
+{
+    term_rgb_color(T_8F, rgb);
+}
+
+    void
+term_bg_rgb_color(long_u rgb)
+{
+    term_rgb_color(T_8B, rgb);
+}
+
+#define RED(rgb)   ((rgb>>16)&0xFF)
+#define GREEN(rgb) ((rgb>> 8)&0xFF)
+#define BLUE(rgb)  ((rgb    )&0xFF)
+
+    static void
+term_rgb_color(char_u *s, long_u rgb)
+{
+#define MAX_COLOR_STR_LEN 100
+    char	buf[MAX_COLOR_STR_LEN];
+
+    vim_snprintf(buf, MAX_COLOR_STR_LEN,
+				  (char *)s, RED(rgb), GREEN(rgb), BLUE(rgb));
+    OUT_STR(buf);
+}
+#endif
 
 #if (defined(FEAT_TITLE) && (defined(UNIX) || defined(VMS) \
 	|| defined(MACOS_X))) || defined(PROTO)
@@ -2981,7 +2928,7 @@ win_new_shellsize(void)
     if (old_Columns != Columns)
     {
 	old_Columns = Columns;
-#ifdef FEAT_VERTSPLIT
+#ifdef FEAT_WINDOWS
 	shell_new_columns();	/* update window sizes */
 #endif
     }
@@ -3604,7 +3551,7 @@ scroll_region_set(win_T *wp, int off)
 {
     OUT_STR(tgoto((char *)T_CS, W_WINROW(wp) + wp->w_height - 1,
 							 W_WINROW(wp) + off));
-#ifdef FEAT_VERTSPLIT
+#ifdef FEAT_WINDOWS
     if (*T_CSV != NUL && wp->w_width != Columns)
 	OUT_STR(tgoto((char *)T_CSV, W_WINCOL(wp) + wp->w_width - 1,
 							       W_WINCOL(wp)));
@@ -3619,7 +3566,7 @@ scroll_region_set(win_T *wp, int off)
 scroll_region_reset(void)
 {
     OUT_STR(tgoto((char *)T_CS, (int)Rows - 1, 0));
-#ifdef FEAT_VERTSPLIT
+#ifdef FEAT_WINDOWS
     if (*T_CSV != NUL)
 	OUT_STR(tgoto((char *)T_CSV, (int)Columns - 1, 0));
 #endif
@@ -4486,7 +4433,7 @@ check_termcode(
 	    if (key_name[0] == (int)KS_MOUSE)
 	    {
 		/*
-		 * For xterm and MSDOS we get "<t_mouse>scr", where
+		 * For xterm we get "<t_mouse>scr", where
 		 *  s == encoded button state:
 		 *	   0x20 = left button down
 		 *	   0x21 = middle button down
@@ -4650,7 +4597,7 @@ check_termcode(
 #endif
 	    )
 	{
-#  if !defined(MSWIN) && !defined(MSDOS)
+#  if !defined(MSWIN)
 		/*
 		 * Handle mouse events.
 		 * Recognize the xterm mouse wheel, but not in the GUI, the
@@ -6103,5 +6050,152 @@ update_tcap(int attr)
 	  p->bt_string = &ksmd_str[0];
       ++p;
     }
+}
+#endif
+
+#if defined(FEAT_GUI) || defined(FEAT_TERMTRUECOLOR) || defined(PROTO)
+    static int
+hex_digit(int c)
+{
+    if (isdigit(c))
+	return c - '0';
+    c = TOLOWER_ASC(c);
+    if (c >= 'a' && c <= 'f')
+	return c - 'a' + 10;
+    return 0x1ffffff;
+}
+
+    guicolor_T
+gui_get_color_cmn(char_u *name)
+{
+    /* On MS-Windows an RGB macro is available and it's different from ours,
+     * but does what is needed. */
+# ifndef RGB
+#  define RGB(r, g, b)	((r<<16) | (g<<8) | (b))
+# endif
+# define LINE_LEN 100
+    FILE	*fd;
+    char	line[LINE_LEN];
+    char_u	*fname;
+    int		r, g, b, i;
+    guicolor_T  color;
+
+    struct rgbcolor_table_S {
+	char_u	    *color_name;
+	guicolor_T  color;
+    };
+
+    static struct rgbcolor_table_S rgb_table[] = {
+	    {(char_u *)"black",		RGB(0x00, 0x00, 0x00)},
+	    {(char_u *)"blue",		RGB(0x00, 0x00, 0xFF)},
+	    {(char_u *)"brown",		RGB(0xA5, 0x2A, 0x2A)},
+	    {(char_u *)"cyan",		RGB(0x00, 0xFF, 0xFF)},
+	    {(char_u *)"darkblue",	RGB(0x00, 0x00, 0x8B)},
+	    {(char_u *)"darkcyan",	RGB(0x00, 0x8B, 0x8B)},
+	    {(char_u *)"darkgray",	RGB(0xA9, 0xA9, 0xA9)},
+	    {(char_u *)"darkgreen",	RGB(0x00, 0x64, 0x00)},
+	    {(char_u *)"darkgrey",	RGB(0xA9, 0xA9, 0xA9)},
+	    {(char_u *)"darkmagenta",	RGB(0x8B, 0x00, 0x8B)},
+	    {(char_u *)"darkred",	RGB(0x8B, 0x00, 0x00)},
+	    {(char_u *)"darkyellow",	RGB(0x8B, 0x8B, 0x00)}, /* No X11 */
+	    {(char_u *)"gray",		RGB(0xBE, 0xBE, 0xBE)},
+	    {(char_u *)"gray10",	RGB(0x1A, 0x1A, 0x1A)},
+	    {(char_u *)"gray20",	RGB(0x33, 0x33, 0x33)},
+	    {(char_u *)"gray30",	RGB(0x4D, 0x4D, 0x4D)},
+	    {(char_u *)"gray40",	RGB(0x66, 0x66, 0x66)},
+	    {(char_u *)"gray50",	RGB(0x7F, 0x7F, 0x7F)},
+	    {(char_u *)"gray60",	RGB(0x99, 0x99, 0x99)},
+	    {(char_u *)"gray70",	RGB(0xB3, 0xB3, 0xB3)},
+	    {(char_u *)"gray80",	RGB(0xCC, 0xCC, 0xCC)},
+	    {(char_u *)"gray90",	RGB(0xE5, 0xE5, 0xE5)},
+	    {(char_u *)"green",		RGB(0x00, 0xFF, 0x00)},
+	    {(char_u *)"grey",		RGB(0xBE, 0xBE, 0xBE)},
+	    {(char_u *)"grey10",	RGB(0x1A, 0x1A, 0x1A)},
+	    {(char_u *)"grey20",	RGB(0x33, 0x33, 0x33)},
+	    {(char_u *)"grey30",	RGB(0x4D, 0x4D, 0x4D)},
+	    {(char_u *)"grey40",	RGB(0x66, 0x66, 0x66)},
+	    {(char_u *)"grey50",	RGB(0x7F, 0x7F, 0x7F)},
+	    {(char_u *)"grey60",	RGB(0x99, 0x99, 0x99)},
+	    {(char_u *)"grey70",	RGB(0xB3, 0xB3, 0xB3)},
+	    {(char_u *)"grey80",	RGB(0xCC, 0xCC, 0xCC)},
+	    {(char_u *)"grey90",	RGB(0xE5, 0xE5, 0xE5)},
+	    {(char_u *)"lightblue",	RGB(0xAD, 0xD8, 0xE6)},
+	    {(char_u *)"lightcyan",	RGB(0xE0, 0xFF, 0xFF)},
+	    {(char_u *)"lightgray",	RGB(0xD3, 0xD3, 0xD3)},
+	    {(char_u *)"lightgreen",	RGB(0x90, 0xEE, 0x90)},
+	    {(char_u *)"lightgrey",	RGB(0xD3, 0xD3, 0xD3)},
+	    {(char_u *)"lightmagenta",	RGB(0xFF, 0x8B, 0xFF)}, /* No X11 */
+	    {(char_u *)"lightred",	RGB(0xFF, 0x8B, 0x8B)}, /* No X11 */
+	    {(char_u *)"lightyellow",	RGB(0xFF, 0xFF, 0xE0)},
+	    {(char_u *)"magenta",	RGB(0xFF, 0x00, 0xFF)},
+	    {(char_u *)"orange",	RGB(0xFF, 0xA5, 0x00)},
+	    {(char_u *)"purple",	RGB(0xA0, 0x20, 0xF0)},
+	    {(char_u *)"red",		RGB(0xFF, 0x00, 0x00)},
+	    {(char_u *)"seagreen",	RGB(0x2E, 0x8B, 0x57)},
+	    {(char_u *)"slateblue",	RGB(0x6A, 0x5A, 0xCD)},
+	    {(char_u *)"violet",	RGB(0xEE, 0x82, 0xEE)},
+	    {(char_u *)"white",		RGB(0xFF, 0xFF, 0xFF)},
+	    {(char_u *)"yellow",	RGB(0xFF, 0xFF, 0x00)},
+    };
+
+
+    if (name[0] == '#' && STRLEN(name) == 7)
+    {
+	/* Name is in "#rrggbb" format */
+	color = RGB(((hex_digit(name[1]) << 4) + hex_digit(name[2])),
+		    ((hex_digit(name[3]) << 4) + hex_digit(name[4])),
+		    ((hex_digit(name[5]) << 4) + hex_digit(name[6])));
+	if (color > 0xffffff)
+	    return INVALCOLOR;
+	return color;
+    }
+
+    /* Check if the name is one of the colors we know */
+    for (i = 0; i < (int)(sizeof(rgb_table) / sizeof(rgb_table[0])); i++)
+	if (STRICMP(name, rgb_table[i].color_name) == 0)
+	    return rgb_table[i].color;
+
+    /*
+     * Last attempt. Look in the file "$VIM/rgb.txt".
+     */
+
+    fname = expand_env_save((char_u *)"$VIMRUNTIME/rgb.txt");
+    if (fname == NULL)
+	return INVALCOLOR;
+
+    fd = fopen((char *)fname, "rt");
+    vim_free(fname);
+    if (fd == NULL)
+    {
+	if (p_verbose > 1)
+	    verb_msg((char_u *)_("Cannot open $VIMRUNTIME/rgb.txt"));
+	return INVALCOLOR;
+    }
+
+    while (!feof(fd))
+    {
+	int		len;
+	int		pos;
+
+	(void)fgets(line, LINE_LEN, fd);
+	len = strlen(line);
+
+	if (len <= 1 || line[len - 1] != '\n')
+	    continue;
+
+	line[len - 1] = '\0';
+
+	i = sscanf(line, "%d %d %d %n", &r, &g, &b, &pos);
+	if (i != 3)
+	    continue;
+
+	if (STRICMP(line + pos, name) == 0)
+	{
+	    fclose(fd);
+	    return (guicolor_T)RGB(r, g, b);
+	}
+    }
+    fclose(fd);
+    return INVALCOLOR;
 }
 #endif

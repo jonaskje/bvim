@@ -77,6 +77,7 @@ typedef struct bore_toggle_entry_t {
 typedef struct bore_t {
     u32 sln_path; // abs path of solution
     u32 sln_dir;  // abs dir of solution
+    u32 sln_name; // name of solution
 
     char* filelist_tmp_file; // name of temporary filelist file
 

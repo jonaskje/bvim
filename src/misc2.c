@@ -169,7 +169,7 @@ coladvance2(
 
 	if (finetune
 		&& curwin->w_p_wrap
-# ifdef FEAT_VERTSPLIT
+# ifdef FEAT_WINDOWS
 		&& curwin->w_width != 0
 # endif
 		&& wcol >= (colnr_T)width)
@@ -805,12 +805,7 @@ alloc_does_fail(long_u size)
  * Some memory is reserved for error messages and for being able to
  * call mf_release_all(), which needs some memory for mf_trans_add().
  */
-#if defined(MSDOS) && !defined(DJGPP)
-# define SMALL_MEM
-# define KEEP_ROOM 8192L
-#else
-# define KEEP_ROOM (2 * 8192L)
-#endif
+#define KEEP_ROOM (2 * 8192L)
 #define KEEP_ROOM_KB (KEEP_ROOM / 1024L)
 
 /*
@@ -892,7 +887,7 @@ lalloc(long_u size, int message)
     char_u	*p;		    /* pointer to new storage space */
     static int	releasing = FALSE;  /* don't do mf_release_all() recursive */
     int		try_again;
-#if defined(HAVE_AVAIL_MEM) && !defined(SMALL_MEM)
+#if defined(HAVE_AVAIL_MEM)
     static long_u allocated = 0;    /* allocated since last avail check */
 #endif
 
@@ -907,12 +902,6 @@ lalloc(long_u size, int message)
 
 #ifdef MEM_PROFILE
     mem_pre_alloc_l(&size);
-#endif
-
-#if defined(MSDOS) && !defined(DJGPP)
-    if (size >= 0xfff0)		/* in MSDOS we can't deal with >64K blocks */
-	p = NULL;
-    else
 #endif
 
     /*
@@ -934,14 +923,13 @@ lalloc(long_u size, int message)
 	    /* 1. No check for available memory: Just return. */
 	    goto theend;
 #else
-# ifndef SMALL_MEM
 	    /* 2. Slow check for available memory: call mch_avail_mem() after
 	     *    allocating (KEEP_ROOM / 2) amount of memory. */
 	    allocated += size;
 	    if (allocated < KEEP_ROOM / 2)
 		goto theend;
 	    allocated = 0;
-# endif
+
 	    /* 3. check for available memory: call mch_avail_mem() */
 	    if (mch_avail_mem(TRUE) < KEEP_ROOM_KB && !releasing)
 	    {
@@ -1138,6 +1126,9 @@ free_all_mem(void)
 # endif
 # ifdef FEAT_DIFF
     diff_clear(curtab);
+# endif
+# ifdef FEAT_JOB_CHANNEL
+    channel_free_all();
 # endif
     clear_sb_text();	      /* free any scrollback text */
 
@@ -1397,7 +1388,7 @@ vim_strsave_shellescape(char_u *string, int do_special, int do_newline)
     length = (unsigned)STRLEN(string) + 3;  /* two quotes and a trailing NUL */
     for (p = string; *p != NUL; mb_ptr_adv(p))
     {
-# if defined(WIN32) || defined(WIN16) || defined(DOS)
+# if defined(WIN32) || defined(DOS)
 	if (!p_ssl)
 	{
 	    if (*p == '"')
@@ -1428,7 +1419,7 @@ vim_strsave_shellescape(char_u *string, int do_special, int do_newline)
 	d = escaped_string;
 
 	/* add opening quote */
-# if defined(WIN32) || defined(WIN16) || defined(DOS)
+# if defined(WIN32) || defined(DOS)
 	if (!p_ssl)
 	    *d++ = '"';
 	else
@@ -1437,7 +1428,7 @@ vim_strsave_shellescape(char_u *string, int do_special, int do_newline)
 
 	for (p = string; *p != NUL; )
 	{
-# if defined(WIN32) || defined(WIN16) || defined(DOS)
+# if defined(WIN32) || defined(DOS)
 	    if (!p_ssl)
 	    {
 		if (*p == '"')
@@ -1480,7 +1471,7 @@ vim_strsave_shellescape(char_u *string, int do_special, int do_newline)
 	}
 
 	/* add terminating quote and finish with a NUL */
-# if defined(WIN32) || defined(WIN16) || defined(DOS)
+# if defined(WIN32) || defined(DOS)
 	if (!p_ssl)
 	    *d++ = '"';
 	else
@@ -1738,13 +1729,14 @@ vim_memcmp(void *b1, void *b2, size_t len)
 }
 #endif
 
+/* skipped when generating prototypes, the prototype is in vim.h */
 #ifdef VIM_MEMMOVE
 /*
  * Version of memmove() that handles overlapping source and destination.
  * For systems that don't have a function that is guaranteed to do that (SYSV).
  */
     void
-mch_memmove(void *src_arg, *dst_arg, size_t len)
+mch_memmove(void *src_arg, void *dst_arg, size_t len)
 {
     /*
      * A void doesn't have a size, we use char pointers.
@@ -3641,7 +3633,7 @@ get_shape_idx(int mouse)
     }
     if (mouse && drag_status_line)
 	return SHAPE_IDX_SDRAG;
-# ifdef FEAT_VERTSPLIT
+# ifdef FEAT_WINDOWS
     if (mouse && drag_sep_line)
 	return SHAPE_IDX_VDRAG;
 # endif
@@ -5450,7 +5442,7 @@ find_file_in_path_option(
     if (vim_isAbsName(ff_file_to_find)
 	    /* "..", "../path", "." and "./path": don't use the path_option */
 	    || rel_to_curdir
-#if defined(MSWIN) || defined(MSDOS)
+#if defined(MSWIN)
 	    /* handle "\tmp" as absolute path */
 	    || vim_ispathsep(ff_file_to_find[0])
 	    /* handle "c:name" as absolute path */
@@ -5504,18 +5496,10 @@ find_file_in_path_option(
 		buf = suffixes;
 		for (;;)
 		{
-		    if (
-#ifdef DJGPP
-			    /* "C:" by itself will fail for mch_getperm(),
-			     * assume it's always valid. */
-			    (find_what != FINDFILE_FILE && NameBuff[0] != NUL
-				  && NameBuff[1] == ':'
-				  && NameBuff[2] == NUL) ||
-#endif
-			    (mch_getperm(NameBuff) >= 0
+		    if (mch_getperm(NameBuff) >= 0
 			     && (find_what == FINDFILE_BOTH
 				 || ((find_what == FINDFILE_DIR)
-						    == mch_isdir(NameBuff)))))
+						    == mch_isdir(NameBuff))))
 		    {
 			file_name = vim_strsave(NameBuff);
 			goto theend;
@@ -6236,17 +6220,29 @@ has_non_ascii(char_u *s)
     void
 parse_queued_messages(void)
 {
+    /* For Win32 mch_breakcheck() does not check for input, do it here. */
+# if defined(WIN32) && defined(FEAT_JOB_CHANNEL)
+    channel_handle_events();
+# endif
+
 # ifdef FEAT_NETBEANS_INTG
     /* Process the queued netbeans messages. */
     netbeans_parse_messages();
 # endif
-# ifdef FEAT_CHANNEL
+# ifdef FEAT_JOB_CHANNEL
+    /* Write any buffer lines still to be written. */
+    channel_write_any_lines();
+
     /* Process the messages queued on channels. */
     channel_parse_messages();
 # endif
 # if defined(FEAT_CLIENTSERVER) && defined(FEAT_X11)
     /* Process the queued clientserver messages. */
     server_parse_messages();
+# endif
+# ifdef FEAT_JOB_CHANNEL
+    /* Check if any jobs have ended. */
+    job_check_ended();
 # endif
 }
 #endif

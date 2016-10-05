@@ -139,14 +139,19 @@ open_buffer(
 #endif
        )
     {
+	int old_msg_silent = msg_silent;
+
 #ifdef FEAT_NETBEANS_INTG
 	int oldFire = netbeansFireChanges;
 
 	netbeansFireChanges = 0;
 #endif
+	if (shortmess(SHM_FILEINFO))
+	    msg_silent = 1;
 	retval = readfile(curbuf->b_ffname, curbuf->b_fname,
 		  (linenr_T)0, (linenr_T)0, (linenr_T)MAXLNUM, eap,
 		  flags | READ_NEW);
+	msg_silent = old_msg_silent;
 #ifdef FEAT_NETBEANS_INTG
 	netbeansFireChanges = oldFire;
 #endif
@@ -541,9 +546,7 @@ buf_clear_file(buf_T *buf)
 {
     buf->b_ml.ml_line_count = 1;
     unchanged(buf, TRUE);
-#ifndef SHORT_FNAME
     buf->b_shortname = FALSE;
-#endif
     buf->b_p_eol = TRUE;
     buf->b_start_eol = TRUE;
 #ifdef FEAT_MBYTE
@@ -1617,11 +1620,14 @@ enter_buffer(buf_T *buf)
 #if defined(FEAT_AUTOCHDIR) || defined(PROTO)
 /*
  * Change to the directory of the current buffer.
+ * Don't do this while still starting up.
  */
     void
 do_autochdir(void)
 {
-    if (curbuf->b_ffname != NULL && vim_chdirfile(curbuf->b_ffname) == OK)
+    if (starting == 0
+	    && curbuf->b_ffname != NULL
+	    && vim_chdirfile(curbuf->b_ffname) == OK)
 	shorten_fnames(TRUE);
 }
 #endif
@@ -2911,9 +2917,7 @@ setfname(
     }
 #endif
 
-#ifndef SHORT_FNAME
     buf->b_shortname = FALSE;
-#endif
 
     buf_name_changed(buf);
     return OK;
@@ -3350,17 +3354,33 @@ maketitle(void)
 	}
 	else
 	{
+	    *buf = 0;
+#if defined(FEAT_BORE) && defined(FEAT_CLIENTSERVER)
+	    /* format: "VIM - fname + (path) (1 of 2)" */
+
+#define SPACE_FOR_FNAME (IOSIZE - 80)
+#define SPACE_FOR_DIR   (IOSIZE - 10)
+#define SPACE_FOR_ARGNR (IOSIZE - 0)
+
+	    if (serverName != NULL)
+	    {
+		vim_strncpy(buf, serverName, IOSIZE - 1);
+		vim_strcat(buf, " - ", IOSIZE);
+	    }
+#else
 	    /* format: "fname + (path) (1 of 2) - VIM" */
 
 #define SPACE_FOR_FNAME (IOSIZE - 100)
 #define SPACE_FOR_DIR   (IOSIZE - 20)
 #define SPACE_FOR_ARGNR (IOSIZE - 10)  /* at least room for " - VIM" */
+#endif
+	    off = (int)STRLEN(buf);
 	    if (curbuf->b_fname == NULL)
-		vim_strncpy(buf, (char_u *)_("[No Name]"), SPACE_FOR_FNAME);
+		vim_strncpy(buf + off, (char_u *)_("[No Name]"), SPACE_FOR_FNAME);
 	    else
 	    {
 		p = transstr(gettail(curbuf->b_fname));
-		vim_strncpy(buf, p, SPACE_FOR_FNAME);
+		vim_strncpy(buf + off, p, SPACE_FOR_FNAME);
 		vim_free(p);
 	    }
 
@@ -3418,6 +3438,7 @@ maketitle(void)
 
 	    append_arg_number(curwin, buf, SPACE_FOR_ARGNR, FALSE);
 
+#ifndef FEAT_BORE
 #if defined(FEAT_CLIENTSERVER)
 	    if (serverName != NULL)
 	    {
@@ -3427,6 +3448,7 @@ maketitle(void)
 	    else
 #endif
 		STRCAT(buf, " - VIM");
+#endif
 
 	    if (maxlen > 0)
 	    {
@@ -3723,7 +3745,7 @@ build_stl_str_hl(
 	    {
 		/* remove group if all items are empty */
 		for (n = groupitem[groupdepth] + 1; n < curitem; n++)
-		    if (item[n].type == Normal)
+		    if (item[n].type == Normal || item[n].type == Highlight)
 			break;
 		if (n == curitem)
 		{
@@ -4480,7 +4502,7 @@ fix_fname(char_u  *fname)
 # ifdef BACKSLASH_IN_FILENAME
 	    || strstr((char *)fname, "\\\\") != NULL
 # endif
-# if defined(MSWIN) || defined(DJGPP)
+# if defined(MSWIN)
 	    || vim_strchr(fname, '~') != NULL
 # endif
 	    )
@@ -4603,9 +4625,9 @@ do_arg_all(
     old_curwin = curwin;
     old_curtab = curtab;
 
-#ifdef FEAT_GUI
+# ifdef FEAT_GUI
     need_mouse_correct = TRUE;
-#endif
+# endif
 
     /*
      * Try closing all windows that are not in the argument list.
@@ -4625,10 +4647,7 @@ do_arg_all(
 	    buf = wp->w_buffer;
 	    if (buf->b_ffname == NULL
 		    || (!keep_tabs && buf->b_nwindows > 1)
-#ifdef FEAT_VERTSPLIT
-		    || wp->w_width != Columns
-#endif
-		    )
+		    || wp->w_width != Columns)
 		i = opened_len;
 	    else
 	    {
@@ -4897,13 +4916,11 @@ ex_buffer_all(exarg_T *eap)
 	{
 	    wpnext = wp->w_next;
 	    if ((wp->w_buffer->b_nwindows > 1
-#ifdef FEAT_VERTSPLIT
+#ifdef FEAT_WINDOWS
 		    || ((cmdmod.split & WSP_VERT)
 			? wp->w_height + wp->w_status_height < Rows - p_ch
 							    - tabline_height()
 			: wp->w_width != Columns)
-#endif
-#ifdef FEAT_WINDOWS
 		    || (had_tab > 0 && wp != firstwin)
 #endif
 		    ) && firstwin != lastwin

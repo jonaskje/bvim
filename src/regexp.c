@@ -791,7 +791,7 @@ char *EQUIVAL_CLASS_C[16] = {
     "E\x71\x72\x73\x74",
     "I\x75\x76\x77\x78",
     "N\x69",
-    "O\xEB\xEC\xED\xEE\xEF",
+    "O\xEB\xEC\xED\xEE\xEF\x80",
     "U\xFB\xFC\xFD\xFE",
     "Y\xBA",
     "a\x42\x43\x44\x45\x46\x47",
@@ -799,7 +799,7 @@ char *EQUIVAL_CLASS_C[16] = {
     "e\x51\x52\x53\x54",
     "i\x55\x56\x57\x58",
     "n\x49",
-    "o\xCB\xCC\xCD\xCE\xCF",
+    "o\xCB\xCC\xCD\xCE\xCF\x70",
     "u\xDB\xDC\xDD\xDE",
     "y\x8D\xDF",
 };
@@ -1338,12 +1338,6 @@ bt_regcomp(char_u *expr, int re_flags)
     if (reg(REG_NOPAREN, &flags) == NULL)
 	return NULL;
 
-    /* Small enough for pointer-storage convention? */
-#ifdef SMALL_MALLOC		/* 16 bit storage allocation */
-    if (regsize >= 65536L - 256L)
-	EMSG_RET_NULL(_("E339: Pattern too long"));
-#endif
-
     /* Allocate space. */
     r = (bt_regprog_T *)lalloc(sizeof(bt_regprog_T) + regsize, TRUE);
     if (r == NULL)
@@ -1499,6 +1493,10 @@ vim_regcomp_had_eol(void)
     return had_eol;
 }
 #endif
+
+/* variables for parsing reginput */
+static int	at_start;	/* True when on the first character */
+static int	prev_at_start;  /* True when on the second character */
 
 /*
  * Parse regular expression, i.e. main body or parenthesized thing.
@@ -1918,6 +1916,7 @@ regatom(int *flagp)
     int		    c;
     char_u	    *p;
     int		    extra = 0;
+    int		    save_prev_at_start = prev_at_start;
 
     *flagp = WORST;		/* Tentatively. */
 
@@ -2331,7 +2330,11 @@ regatom(int *flagp)
 			      else if (c == 'l' || c == 'c' || c == 'v')
 			      {
 				  if (c == 'l')
+				  {
 				      ret = regnode(RE_LNUM);
+				      if (save_prev_at_start)
+					  at_start = TRUE;
+				  }
 				  else if (c == 'c')
 				      ret = regnode(RE_COL);
 				  else
@@ -2539,14 +2542,14 @@ collection:
 				}
 				break;
 			    case CLASS_ALNUM:
-				for (cu = 1; cu <= 255; cu++)
+				for (cu = 1; cu < 128; cu++)
 				    if (isalnum(cu))
-					regc(cu);
+					regmbc(cu);
 				break;
 			    case CLASS_ALPHA:
-				for (cu = 1; cu <= 255; cu++)
+				for (cu = 1; cu < 128; cu++)
 				    if (isalpha(cu))
-					regc(cu);
+					regmbc(cu);
 				break;
 			    case CLASS_BLANK:
 				regc(' ');
@@ -2555,32 +2558,33 @@ collection:
 			    case CLASS_CNTRL:
 				for (cu = 1; cu <= 255; cu++)
 				    if (iscntrl(cu))
-					regc(cu);
+					regmbc(cu);
 				break;
 			    case CLASS_DIGIT:
 				for (cu = 1; cu <= 255; cu++)
 				    if (VIM_ISDIGIT(cu))
-					regc(cu);
+					regmbc(cu);
 				break;
 			    case CLASS_GRAPH:
 				for (cu = 1; cu <= 255; cu++)
 				    if (isgraph(cu))
-					regc(cu);
+					regmbc(cu);
 				break;
 			    case CLASS_LOWER:
 				for (cu = 1; cu <= 255; cu++)
-				    if (MB_ISLOWER(cu))
-					regc(cu);
+				    if (MB_ISLOWER(cu) && cu != 170
+								 && cu != 186)
+					regmbc(cu);
 				break;
 			    case CLASS_PRINT:
 				for (cu = 1; cu <= 255; cu++)
 				    if (vim_isprintc(cu))
-					regc(cu);
+					regmbc(cu);
 				break;
 			    case CLASS_PUNCT:
-				for (cu = 1; cu <= 255; cu++)
+				for (cu = 1; cu < 128; cu++)
 				    if (ispunct(cu))
-					regc(cu);
+					regmbc(cu);
 				break;
 			    case CLASS_SPACE:
 				for (cu = 9; cu <= 13; cu++)
@@ -2590,12 +2594,12 @@ collection:
 			    case CLASS_UPPER:
 				for (cu = 1; cu <= 255; cu++)
 				    if (MB_ISUPPER(cu))
-					regc(cu);
+					regmbc(cu);
 				break;
 			    case CLASS_XDIGIT:
 				for (cu = 1; cu <= 255; cu++)
 				    if (vim_isxdigit(cu))
-					regc(cu);
+					regmbc(cu);
 				break;
 			    case CLASS_TAB:
 				regc('\t');
@@ -2946,10 +2950,6 @@ regoptail(char_u *p, char_u *val)
 /*
  * Functions for getting characters from the regexp input.
  */
-
-static int	at_start;	/* True when on the first character */
-static int	prev_at_start;  /* True when on the second character */
-
 /*
  * Start parsing at "str".
  */
@@ -7911,7 +7911,7 @@ reg_submatch_list(int no)
 
     if (error)
     {
-	list_free(list, TRUE);
+	list_free(list);
 	return NULL;
     }
     return list;

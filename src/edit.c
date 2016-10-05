@@ -185,7 +185,8 @@ static int  ins_compl_key2dir(int c);
 static int  ins_compl_pum_key(int c);
 static int  ins_compl_key2count(int c);
 static int  ins_compl_use_match(int c);
-static int  ins_complete(int c);
+static int  ins_complete(int c, int enable_pum);
+static void show_pum(int save_w_wrow);
 static unsigned  quote_meta(char_u *dest, char_u *str, int len);
 #endif /* FEAT_INS_EXPAND */
 
@@ -328,7 +329,7 @@ edit(
 {
     int		c = 0;
     char_u	*ptr;
-    int		lastc;
+    int		lastc = 0;
     int		mincol;
     static linenr_T o_lnum = 0;
     int		i;
@@ -1051,12 +1052,6 @@ doESCkey:
 	case K_SELECT:	/* end of Select mode mapping - ignore */
 	    break;
 
-#ifdef FEAT_SNIFF
-	case K_SNIFF:	/* Sniff command received */
-	    stuffcharReadbuff(K_SNIFF);
-	    goto doESCkey;
-#endif
-
 	case K_HELP:	/* Help key works like <ESC> <Help> */
 	case K_F1:
 	case K_XF1:
@@ -1429,8 +1424,10 @@ doESCkey:
 
 docomplete:
 	    compl_busy = TRUE;
-	    if (ins_complete(c) == FAIL)
+	    disable_fold_update++;  /* don't redraw folds here */
+	    if (ins_complete(c, TRUE) == FAIL)
 		compl_cont_status = 0;
+	    disable_fold_update--;
 	    compl_busy = FALSE;
 	    break;
 #endif /* FEAT_INS_EXPAND */
@@ -1529,7 +1526,12 @@ normalchar:
 
 #ifdef FEAT_AUTOCMD
 	/* If typed something may trigger CursorHoldI again. */
-	if (c != K_CURSORHOLD)
+	if (c != K_CURSORHOLD
+# ifdef FEAT_COMPL_FUNC
+	    /* but not in CTRL-X mode, a script can't restore the state */
+	    && ctrl_x_mode == 0
+# endif
+	       )
 	    did_cursorhold = FALSE;
 #endif
 
@@ -1595,7 +1597,9 @@ ins_redraw(
 		curwin->w_p_cole > 0
 # endif
 		)
+# ifdef FEAT_AUTOCMD
 	&& !equalpos(last_cursormoved, curwin->w_cursor)
+# endif
 # ifdef FEAT_INS_EXPAND
 	&& !pum_visible()
 # endif
@@ -1611,17 +1615,26 @@ ins_redraw(
 # endif
 # ifdef FEAT_AUTOCMD
 	if (has_cursormovedI())
+	{
+	    /* Make sure curswant is correct, an autocommand may call
+	     * getcurpos(). */
+	    update_curswant();
 	    apply_autocmds(EVENT_CURSORMOVEDI, NULL, NULL, FALSE, curbuf);
+	}
 # endif
 # ifdef FEAT_CONCEAL
 	if (curwin->w_p_cole > 0)
 	{
+#  ifdef FEAT_AUTOCMD
 	    conceal_old_cursor_line = last_cursormoved.lnum;
+#  endif
 	    conceal_new_cursor_line = curwin->w_cursor.lnum;
 	    conceal_update_lines = TRUE;
 	}
 # endif
+# ifdef FEAT_AUTOCMD
 	last_cursormoved = curwin->w_cursor;
+# endif
     }
 #endif
 
@@ -2753,6 +2766,21 @@ ins_compl_make_cyclic(void)
 }
 
 /*
+ * Set variables that store noselect and noinsert behavior from the
+ * 'completeopt' value.
+ */
+    void
+completeopt_was_set()
+{
+    compl_no_insert = FALSE;
+    compl_no_select = FALSE;
+    if (strstr((char *)p_cot, "noselect") != NULL)
+	compl_no_select = TRUE;
+    if (strstr((char *)p_cot, "noinsert") != NULL)
+	compl_no_insert = TRUE;
+}
+
+/*
  * Start completion for the complete() function.
  * "startcol" is where the matched text starts (1 is first column).
  * "list" is the list of matches.
@@ -2760,6 +2788,8 @@ ins_compl_make_cyclic(void)
     void
 set_completion(colnr_T startcol, list_T *list)
 {
+    int save_w_wrow = curwin->w_wrow;
+
     /* If already doing completions stop it. */
     if (ctrl_x_mode != 0)
 	ins_compl_prep(' ');
@@ -2788,12 +2818,19 @@ set_completion(colnr_T startcol, list_T *list)
     compl_cont_status = 0;
 
     compl_curr_match = compl_first_match;
-    if (compl_no_insert)
-	ins_complete(K_DOWN);
+    if (compl_no_insert || compl_no_select)
+    {
+	ins_complete(K_DOWN, FALSE);
+	if (compl_no_select)
+	    /* Down/Up has no real effect. */
+	    ins_complete(K_UP, FALSE);
+    }
     else
-	ins_complete(Ctrl_N);
-    if (compl_no_select)
-	ins_complete(Ctrl_P);
+	ins_complete(Ctrl_N, FALSE);
+
+    /* Lazily show the popup menu, unless we got interrupted. */
+    if (!compl_interrupted)
+	show_pum(save_w_wrow);
     out_flush();
 }
 
@@ -3479,7 +3516,7 @@ ins_compl_new_leader(void)
 	}
 #endif
 	compl_restarting = TRUE;
-	if (ins_complete(Ctrl_N) == FAIL)
+	if (ins_complete(Ctrl_N, TRUE) == FAIL)
 	    compl_cont_status = 0;
 	compl_restarting = FALSE;
     }
@@ -3660,13 +3697,6 @@ ins_compl_prep(int c)
 	compl_used_match = TRUE;
 
     }
-
-    compl_no_insert = FALSE;
-    compl_no_select = FALSE;
-    if (strstr((char *)p_cot, "noselect") != NULL)
-	compl_no_select = TRUE;
-    if (strstr((char *)p_cot, "noinsert") != NULL)
-	compl_no_insert = TRUE;
 
     if (ctrl_x_mode == CTRL_X_NOT_DEFINED_YET)
     {
@@ -4947,8 +4977,7 @@ ins_compl_check_keys(int frequency)
 ins_compl_key2dir(int c)
 {
     if (c == Ctrl_P || c == Ctrl_L
-	    || (pum_visible() && (c == K_PAGEUP || c == K_KPAGEUP
-						|| c == K_S_UP || c == K_UP)))
+	    || c == K_PAGEUP || c == K_KPAGEUP || c == K_S_UP || c == K_UP)
 	return BACKWARD;
     return FORWARD;
 }
@@ -5012,7 +5041,7 @@ ins_compl_use_match(int c)
  * Returns OK if completion was done, FAIL if something failed (out of mem).
  */
     static int
-ins_complete(int c)
+ins_complete(int c, int enable_pum)
 {
     char_u	*line;
     int		startcol = 0;	    /* column where searched text starts */
@@ -5605,25 +5634,32 @@ ins_complete(int c)
     }
 
     /* Show the popup menu, unless we got interrupted. */
-    if (!compl_interrupted)
+    if (enable_pum && !compl_interrupted)
     {
-	/* RedrawingDisabled may be set when invoked through complete(). */
-	n = RedrawingDisabled;
-	RedrawingDisabled = 0;
-
-	/* If the cursor moved we need to remove the pum first. */
-	setcursor();
-	if (save_w_wrow != curwin->w_wrow)
-	    ins_compl_del_pum();
-
-	ins_compl_show_pum();
-	setcursor();
-	RedrawingDisabled = n;
+	show_pum(save_w_wrow);
     }
     compl_was_interrupted = compl_interrupted;
     compl_interrupted = FALSE;
 
     return OK;
+}
+
+    static void
+show_pum(int save_w_wrow)
+{
+  /* RedrawingDisabled may be set when invoked through complete(). */
+  int n = RedrawingDisabled;
+
+  RedrawingDisabled = 0;
+
+  /* If the cursor moved we need to remove the pum first. */
+  setcursor();
+  if (save_w_wrow != curwin->w_wrow)
+      ins_compl_del_pum();
+
+  ins_compl_show_pum();
+  setcursor();
+  RedrawingDisabled = n;
 }
 
 /*

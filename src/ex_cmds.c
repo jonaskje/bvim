@@ -1925,14 +1925,10 @@ write_viminfo(char_u *file, int forceit)
 #ifdef UNIX
 				    shortname,
 #else
-# ifdef SHORT_FNAME
-				    TRUE,
-# else
-#  ifdef FEAT_GUI_W32
+# ifdef FEAT_GUI_W32
 				    gui_is_win32s(),
-#  else
+# else
 				    FALSE,
-#  endif
 # endif
 #endif
 				    fname,
@@ -2069,26 +2065,30 @@ write_viminfo(char_u *file, int forceit)
     viminfo_errcnt = 0;
     do_viminfo(fp_in, fp_out, forceit ? 0 : (VIF_WANT_INFO | VIF_WANT_MARKS));
 
-    fclose(fp_out);	    /* errors are ignored !? */
+    if (fclose(fp_out) == EOF)
+	++viminfo_errcnt;
+
     if (fp_in != NULL)
     {
 	fclose(fp_in);
 
 	/* In case of an error keep the original viminfo file.  Otherwise
 	 * rename the newly written file.  Give an error if that fails. */
-	if (viminfo_errcnt == 0 && vim_rename(tempname, fname) == -1)
+	if (viminfo_errcnt == 0)
 	{
-	    ++viminfo_errcnt;
-	    EMSG2(_("E886: Can't rename viminfo file to %s!"), fname);
+	    if (vim_rename(tempname, fname) == -1)
+	    {
+		++viminfo_errcnt;
+		EMSG2(_("E886: Can't rename viminfo file to %s!"), fname);
+	    }
+# ifdef WIN3264
+	    /* If the viminfo file was hidden then also hide the new file. */
+	    else if (hidden)
+		mch_hide(fname);
+# endif
 	}
 	if (viminfo_errcnt > 0)
 	    mch_remove(tempname);
-
-#ifdef WIN3264
-	/* If the viminfo file was hidden then also hide the new file. */
-	if (hidden)
-	    mch_hide(fname);
-#endif
     }
 
 end:
@@ -2609,7 +2609,8 @@ ex_file(exarg_T *eap)
 	    return;
     }
     /* print full file name if :cd used */
-    fileinfo(FALSE, FALSE, eap->forceit);
+    if (!shortmess(SHM_FILEINFO))
+	fileinfo(FALSE, FALSE, eap->forceit);
 }
 
 /*
@@ -3268,6 +3269,7 @@ do_ecmd(
     int		did_get_winopts = FALSE;
 #endif
     int		readfile_flags = 0;
+    int		did_inc_redrawing_disabled = FALSE;
 
     if (eap != NULL)
 	command = eap->do_ecmd_cmd;
@@ -3600,6 +3602,11 @@ do_ecmd(
 	oldbuf = (flags & ECMD_OLDBUF);
     }
 
+    /* Don't redraw until the cursor is in the right line, otherwise
+     * autocommands may cause ml_get errors. */
+    ++RedrawingDisabled;
+    did_inc_redrawing_disabled = TRUE;
+
 #ifdef FEAT_AUTOCMD
     buf = curbuf;
 #endif
@@ -3697,9 +3704,6 @@ do_ecmd(
 /*
  * If we get here we are sure to start editing
  */
-    /* don't redraw until the cursor is in the right line */
-    ++RedrawingDisabled;
-
     /* Assume success now */
     retval = OK;
 
@@ -3885,7 +3889,8 @@ do_ecmd(
 	msg_scroll = msg_scroll_save;
 	msg_scrolled_ign = TRUE;
 
-	fileinfo(FALSE, TRUE, FALSE);
+	if (!shortmess(SHM_FILEINFO))
+	    fileinfo(FALSE, TRUE, FALSE);
 
 	msg_scrolled_ign = FALSE;
     }
@@ -3899,6 +3904,7 @@ do_ecmd(
 #endif
 
     --RedrawingDisabled;
+    did_inc_redrawing_disabled = FALSE;
     if (!skip_redraw)
     {
 	n = p_so;
@@ -3933,6 +3939,8 @@ do_ecmd(
 #endif
 
 theend:
+    if (did_inc_redrawing_disabled)
+	--RedrawingDisabled;
 #ifdef FEAT_AUTOCMD
     if (did_set_swapcommand)
 	set_vim_var_string(VV_SWAPCOMMAND, NULL, -1);
@@ -5859,11 +5867,9 @@ ex_help(exarg_T *eap)
 	     * specified, the current window is vertically split and
 	     * narrow. */
 	    n = WSP_HELP;
-# ifdef FEAT_VERTSPLIT
 	    if (cmdmod.split == 0 && curwin->w_width != Columns
 						  && curwin->w_width < 80)
 		n |= WSP_TOP;
-# endif
 	    if (win_split(0, n) == FAIL)
 		goto erret;
 #else
@@ -6112,6 +6118,11 @@ find_help_tags(
 		    || (arg[0] == '\\' && arg[1] == '{'))
 	      *d++ = '\\';
 
+	  /*
+	   * If tag starts with "('", skip the "(". Fixes CTRL-] on ('option'.
+	   */
+	  if (*arg == '(' && arg[1] == '\'')
+	      arg++;
 	  for (s = arg; *s; ++s)
 	  {
 	    /*
@@ -6191,6 +6202,13 @@ find_help_tags(
 	    }
 
 	    *d++ = *s;
+
+	    /*
+	     * If tag contains "({" or "([", tag terminates at the "(".
+	     * This is for help on functions, e.g.: abs({expr}).
+	     */
+	    if (*s == '(' && (s[1] == '{' || s[1] =='['))
+		break;
 
 	    /*
 	     * If tag starts with ', toss everything after a second '. Fixes
@@ -6573,135 +6591,9 @@ ex_viusage(exarg_T *eap UNUSED)
     do_cmdline_cmd((char_u *)"help normal-index");
 }
 
-static void helptags_one(char_u *dir, char_u *ext, char_u *lang, int add_help_tags);
-
 /*
- * ":helptags"
+ * Generate tags in one help directory.
  */
-    void
-ex_helptags(exarg_T *eap)
-{
-    expand_T	xpc;
-    char_u	*dirname;
-    int		add_help_tags = FALSE;
-#ifdef FEAT_MULTI_LANG
-    int		len;
-    int		i, j;
-    garray_T	ga;
-    char_u	lang[2];
-    char_u	ext[5];
-    char_u	fname[8];
-    int		filecount;
-    char_u	**files;
-#endif
-
-    /* Check for ":helptags ++t {dir}". */
-    if (STRNCMP(eap->arg, "++t", 3) == 0 && vim_iswhite(eap->arg[3]))
-    {
-	add_help_tags = TRUE;
-	eap->arg = skipwhite(eap->arg + 3);
-    }
-
-    ExpandInit(&xpc);
-    xpc.xp_context = EXPAND_DIRECTORIES;
-    dirname = ExpandOne(&xpc, eap->arg, NULL,
-			    WILD_LIST_NOTFOUND|WILD_SILENT, WILD_EXPAND_FREE);
-    if (dirname == NULL || !mch_isdir(dirname))
-    {
-	EMSG2(_("E150: Not a directory: %s"), eap->arg);
-	vim_free(dirname);
-	return;
-    }
-
-#ifdef FEAT_MULTI_LANG
-    /* Get a list of all files in the help directory and in subdirectories. */
-    STRCPY(NameBuff, dirname);
-    add_pathsep(NameBuff);
-    STRCAT(NameBuff, "**");
-    if (gen_expand_wildcards(1, &NameBuff, &filecount, &files,
-						    EW_FILE|EW_SILENT) == FAIL
-	    || filecount == 0)
-    {
-	EMSG2("E151: No match: %s", NameBuff);
-	vim_free(dirname);
-	return;
-    }
-
-    /* Go over all files in the directory to find out what languages are
-     * present. */
-    ga_init2(&ga, 1, 10);
-    for (i = 0; i < filecount; ++i)
-    {
-	len = (int)STRLEN(files[i]);
-	if (len > 4)
-	{
-	    if (STRICMP(files[i] + len - 4, ".txt") == 0)
-	    {
-		/* ".txt" -> language "en" */
-		lang[0] = 'e';
-		lang[1] = 'n';
-	    }
-	    else if (files[i][len - 4] == '.'
-		    && ASCII_ISALPHA(files[i][len - 3])
-		    && ASCII_ISALPHA(files[i][len - 2])
-		    && TOLOWER_ASC(files[i][len - 1]) == 'x')
-	    {
-		/* ".abx" -> language "ab" */
-		lang[0] = TOLOWER_ASC(files[i][len - 3]);
-		lang[1] = TOLOWER_ASC(files[i][len - 2]);
-	    }
-	    else
-		continue;
-
-	    /* Did we find this language already? */
-	    for (j = 0; j < ga.ga_len; j += 2)
-		if (STRNCMP(lang, ((char_u *)ga.ga_data) + j, 2) == 0)
-		    break;
-	    if (j == ga.ga_len)
-	    {
-		/* New language, add it. */
-		if (ga_grow(&ga, 2) == FAIL)
-		    break;
-		((char_u *)ga.ga_data)[ga.ga_len++] = lang[0];
-		((char_u *)ga.ga_data)[ga.ga_len++] = lang[1];
-	    }
-	}
-    }
-
-    /*
-     * Loop over the found languages to generate a tags file for each one.
-     */
-    for (j = 0; j < ga.ga_len; j += 2)
-    {
-	STRCPY(fname, "tags-xx");
-	fname[5] = ((char_u *)ga.ga_data)[j];
-	fname[6] = ((char_u *)ga.ga_data)[j + 1];
-	if (fname[5] == 'e' && fname[6] == 'n')
-	{
-	    /* English is an exception: use ".txt" and "tags". */
-	    fname[4] = NUL;
-	    STRCPY(ext, ".txt");
-	}
-	else
-	{
-	    /* Language "ab" uses ".abx" and "tags-ab". */
-	    STRCPY(ext, ".xxx");
-	    ext[1] = fname[5];
-	    ext[2] = fname[6];
-	}
-	helptags_one(dirname, ext, fname, add_help_tags);
-    }
-
-    ga_clear(&ga);
-    FreeWild(filecount, files);
-
-#else
-    /* No language support, just use "*.txt" and "tags". */
-    helptags_one(dirname, (char_u *)".txt", (char_u *)"tags", add_help_tags);
-#endif
-    vim_free(dirname);
-}
-
     static void
 helptags_one(
     char_u	*dir,		/* doc directory */
@@ -6956,6 +6848,150 @@ helptags_one(
 	vim_free(((char_u **)ga.ga_data)[i]);
     ga_clear(&ga);
     fclose(fd_tags);	    /* there is no check for an error... */
+}
+
+/*
+ * Generate tags in one help directory, taking care of translations.
+ */
+    static void
+do_helptags(char_u *dirname, int add_help_tags)
+{
+#ifdef FEAT_MULTI_LANG
+    int		len;
+    int		i, j;
+    garray_T	ga;
+    char_u	lang[2];
+    char_u	ext[5];
+    char_u	fname[8];
+    int		filecount;
+    char_u	**files;
+
+    /* Get a list of all files in the help directory and in subdirectories. */
+    STRCPY(NameBuff, dirname);
+    add_pathsep(NameBuff);
+    STRCAT(NameBuff, "**");
+    if (gen_expand_wildcards(1, &NameBuff, &filecount, &files,
+						    EW_FILE|EW_SILENT) == FAIL
+	    || filecount == 0)
+    {
+	EMSG2("E151: No match: %s", NameBuff);
+	return;
+    }
+
+    /* Go over all files in the directory to find out what languages are
+     * present. */
+    ga_init2(&ga, 1, 10);
+    for (i = 0; i < filecount; ++i)
+    {
+	len = (int)STRLEN(files[i]);
+	if (len > 4)
+	{
+	    if (STRICMP(files[i] + len - 4, ".txt") == 0)
+	    {
+		/* ".txt" -> language "en" */
+		lang[0] = 'e';
+		lang[1] = 'n';
+	    }
+	    else if (files[i][len - 4] == '.'
+		    && ASCII_ISALPHA(files[i][len - 3])
+		    && ASCII_ISALPHA(files[i][len - 2])
+		    && TOLOWER_ASC(files[i][len - 1]) == 'x')
+	    {
+		/* ".abx" -> language "ab" */
+		lang[0] = TOLOWER_ASC(files[i][len - 3]);
+		lang[1] = TOLOWER_ASC(files[i][len - 2]);
+	    }
+	    else
+		continue;
+
+	    /* Did we find this language already? */
+	    for (j = 0; j < ga.ga_len; j += 2)
+		if (STRNCMP(lang, ((char_u *)ga.ga_data) + j, 2) == 0)
+		    break;
+	    if (j == ga.ga_len)
+	    {
+		/* New language, add it. */
+		if (ga_grow(&ga, 2) == FAIL)
+		    break;
+		((char_u *)ga.ga_data)[ga.ga_len++] = lang[0];
+		((char_u *)ga.ga_data)[ga.ga_len++] = lang[1];
+	    }
+	}
+    }
+
+    /*
+     * Loop over the found languages to generate a tags file for each one.
+     */
+    for (j = 0; j < ga.ga_len; j += 2)
+    {
+	STRCPY(fname, "tags-xx");
+	fname[5] = ((char_u *)ga.ga_data)[j];
+	fname[6] = ((char_u *)ga.ga_data)[j + 1];
+	if (fname[5] == 'e' && fname[6] == 'n')
+	{
+	    /* English is an exception: use ".txt" and "tags". */
+	    fname[4] = NUL;
+	    STRCPY(ext, ".txt");
+	}
+	else
+	{
+	    /* Language "ab" uses ".abx" and "tags-ab". */
+	    STRCPY(ext, ".xxx");
+	    ext[1] = fname[5];
+	    ext[2] = fname[6];
+	}
+	helptags_one(dirname, ext, fname, add_help_tags);
+    }
+
+    ga_clear(&ga);
+    FreeWild(filecount, files);
+
+#else
+    /* No language support, just use "*.txt" and "tags". */
+    helptags_one(dirname, (char_u *)".txt", (char_u *)"tags", add_help_tags);
+#endif
+}
+
+    static void
+helptags_cb(char_u *fname, void *cookie)
+{
+    do_helptags(fname, *(int *)cookie);
+}
+
+/*
+ * ":helptags"
+ */
+    void
+ex_helptags(exarg_T *eap)
+{
+    expand_T	xpc;
+    char_u	*dirname;
+    int		add_help_tags = FALSE;
+
+    /* Check for ":helptags ++t {dir}". */
+    if (STRNCMP(eap->arg, "++t", 3) == 0 && vim_iswhite(eap->arg[3]))
+    {
+	add_help_tags = TRUE;
+	eap->arg = skipwhite(eap->arg + 3);
+    }
+
+    if (STRCMP(eap->arg, "ALL") == 0)
+    {
+	do_in_path(p_rtp, (char_u *)"doc", DIP_ALL + DIP_DIR,
+						 helptags_cb, &add_help_tags);
+    }
+    else
+    {
+	ExpandInit(&xpc);
+	xpc.xp_context = EXPAND_DIRECTORIES;
+	dirname = ExpandOne(&xpc, eap->arg, NULL,
+			    WILD_LIST_NOTFOUND|WILD_SILENT, WILD_EXPAND_FREE);
+	if (dirname == NULL || !mch_isdir(dirname))
+	    EMSG2(_("E150: Not a directory: %s"), eap->arg);
+	else
+	    do_helptags(dirname, add_help_tags);
+	vim_free(dirname);
+    }
 }
 
 #if defined(FEAT_SIGNS) || defined(PROTO)
@@ -7776,21 +7812,26 @@ set_context_in_sign_cmd(expand_T *xp, char_u *arg)
     void
 ex_smile(exarg_T *eap UNUSED)
 {
-    static char *code = "\34 \4o\14$\4ox\30 \2o\30$\1ox\25 \2o\36$\1o\11 \1o\1$\3 \2$\1 \1o\1$x\5 \1o\1 \1$\1 \2o\10 \1o\44$\1o\7 \2$\1 \2$\1 \2$\1o\1$x\2 \2o\1 \1$\1 \1$\1 \1\"\1$\6 \1o\11$\4 \15$\4 \11$\1o\7 \3$\1o\2$\1o\1$x\2 \1\"\6$\1o\1$\5 \1o\11$\6 \13$\6 \12$\1o\4 \10$x\4 \7$\4 \13$\6 \13$\6 \27$x\4 \27$\4 \15$\4 \16$\2 \3\"\3$x\5 \1\"\3$\4\"\61$\5 \1\"\3$x\6 \3$\3 \1o\62$\5 \1\"\3$\1ox\5 \1o\2$\1\"\3 \63$\7 \3$\1ox\5 \3$\4 \55$\1\"\1 \1\"\6$\5o\4$\1ox\4 \1o\3$\4o\5$\2 \45$\3 \1o\21$x\4 \10$\1\"\4$\3 \42$\5 \4$\10\"x\3 \4\"\7 \4$\4 \1\"\34$\1\"\6 \1o\3$x\16 \1\"\3$\1o\5 \3\"\22$\1\"\2$\1\"\11 \3$x\20 \3$\1o\12 \1\"\2$\2\"\6$\4\"\13 \1o\3$x\21 \4$\1o\40 \1o\3$\1\"x\22 \1\"\4$\1o\6 \1o\6$\1o\1\"\4$\1o\10 \1o\4$x\24 \1\"\5$\2o\5 \2\"\4$\1o\5$\1o\3 \1o\4$\2\"x\27 \2\"\5$\4o\2 \1\"\3$\1o\11$\3\"x\32 \2\"\7$\2o\1 \12$x\42 \4\"\13$x\46 \14$x\47 \12$\1\"x\50 \1\"\3$\4\"x";
+    static char *code[] = {
+	"\34 \4o\14$\4ox\30 \2o\30$\1ox\25 \2o\36$\1o\11 \1o\1$\3 \2$\1 \1o\1$x\5 \1o\1 \1$\1 \2o\10 \1o\44$\1o\7 \2$\1 \2$\1 \2$\1o\1$x\2 \2o\1 \1$\1 \1$\1 \1\"\1$\6 \1o\11$\4 \15$\4 \11$\1o\7 \3$\1o\2$\1o\1$x\2 \1\"\6$\1o\1$\5 \1o\11$\6 \13$\6 \12$\1o\4 \10$x\4 \7$\4 \13$\6 \13$\6 \27$x\4 \27$\4 \15$\4 \16$\2 \3\"\3$x\5 \1\"\3$\4\"\61$\5 \1\"\3$x\6 \3$\3 \1o\62$\5 \1\"\3$\1ox\5 \1o\2$\1\"\3 \63$\7 \3$\1ox\5 \3$\4 \55$\1\"\1 \1\"\6$",
+	"\5o\4$\1ox\4 \1o\3$\4o\5$\2 \45$\3 \1o\21$x\4 \10$\1\"\4$\3 \42$\5 \4$\10\"x\3 \4\"\7 \4$\4 \1\"\34$\1\"\6 \1o\3$x\16 \1\"\3$\1o\5 \3\"\22$\1\"\2$\1\"\11 \3$x\20 \3$\1o\12 \1\"\2$\2\"\6$\4\"\13 \1o\3$x\21 \4$\1o\40 \1o\3$\1\"x\22 \1\"\4$\1o\6 \1o\6$\1o\1\"\4$\1o\10 \1o\4$x\24 \1\"\5$\2o\5 \2\"\4$\1o\5$\1o\3 \1o\4$\2\"x\27 \2\"\5$\4o\2 \1\"\3$\1o\11$\3\"x\32 \2\"\7$\2o\1 \12$x\42 \4\"\13$x\46 \14$x\47 \12$\1\"x\50 \1\"\3$\4\"x"
+    };
     char *p;
     int n;
+    int i;
 
     msg_start();
     msg_putchar('\n');
-    for (p = code; *p != NUL; ++p)
-	if (*p == 'x')
-	    msg_putchar('\n');
-	else
-	    for (n = *p++; n > 0; --n)
-		if (*p == 'o' || *p == '$')
-		    msg_putchar_attr(*p, hl_attr(HLF_L));
-		else
-		    msg_putchar(*p);
+    for (i = 0; i < 2; ++i)
+	for (p = code[i]; *p != NUL; ++p)
+	    if (*p == 'x')
+		msg_putchar('\n');
+	    else
+		for (n = *p++; n > 0; --n)
+		    if (*p == 'o' || *p == '$')
+			msg_putchar_attr(*p, hl_attr(HLF_L));
+		    else
+			msg_putchar(*p);
     msg_clr_eos();
 }
 
